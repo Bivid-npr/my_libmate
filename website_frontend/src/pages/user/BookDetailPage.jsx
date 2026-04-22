@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -9,6 +9,8 @@ const BookDetailPage = () => {
   const { id } = useParams();
   const { user, isAuthenticated } = useAuth();
   const { showToast } = useToast();
+  
+  // State
   const [book, setBook] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,19 +26,24 @@ const BookDetailPage = () => {
   const [reservationsLoading, setReservationsLoading] = useState(false);
   const [borrowing, setBorrowing] = useState(false);
   const [reserving, setReserving] = useState(false);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchBookDetails();
-  }, [id, isAuthenticated]);
+  // Memoized book ID
+  const bookId = parseInt(id);
 
-  const fetchBookDetails = async () => {
+  // Fetch book details
+  const fetchBookDetails = useCallback(async () => {
+    if (!bookId) return;
+    
     setLoading(true);
+    setError(null);
+    
     try {
-      const response = await booksAPI.getBook(parseInt(id));
+      const response = await booksAPI.getBook(bookId);
       setBook(response.book);
       setReviews(response.reviews || []);
       
-      // Check if user has already reviewed this book
+      // Check user's review and wishlist if authenticated
       if (isAuthenticated && user) {
         const userRev = response.reviews?.find(r => r.user_id === user.user_id);
         if (userRev) {
@@ -45,45 +52,55 @@ const BookDetailPage = () => {
           setReviewText(userRev.review_text);
         }
         
-        // Check wishlist status
         try {
           const wishlist = await usersAPI.getWishlist();
-          setIsWishlisted(wishlist.some(item => item.book_id === parseInt(id)));
-        } catch (error) {
-          console.error('Error checking wishlist:', error);
+          setIsWishlisted(wishlist.some(item => item.book_id === bookId));
+        } catch (err) {
+          console.error('Error checking wishlist:', err);
         }
       }
-    } catch (error) {
-      console.error('Error fetching book:', error);
+    } catch (err) {
+      console.error('Error fetching book:', err);
+      setError(err.message || 'Failed to load book details');
       showToast('Failed to load book details', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [bookId, isAuthenticated, user, showToast]);
 
-  const fetchReservations = async () => {
+  // Fetch reservations
+  const fetchReservations = useCallback(async () => {
+    if (!bookId) return;
+    
     setReservationsLoading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/books/${id}/reservations`);
+      const response = await fetch(`http://localhost:5000/api/books/${bookId}/reservations`);
       if (response.ok) {
         const data = await response.json();
         setReservations(data);
       }
-    } catch (error) {
-      console.error('Error fetching reservations:', error);
+    } catch (err) {
+      console.error('Error fetching reservations:', err);
     } finally {
       setReservationsLoading(false);
     }
-  };
+  }, [bookId]);
 
-  const handleTabChange = (tab) => {
+  // Initial load
+  useEffect(() => {
+    fetchBookDetails();
+  }, [fetchBookDetails]);
+
+  // Handle tab change
+  const handleTabChange = useCallback((tab) => {
     setActiveTab(tab);
     if (tab === 'queue' && reservations.length === 0) {
       fetchReservations();
     }
-  };
+  }, [reservations.length, fetchReservations]);
 
-  const handleWishlistToggle = async () => {
+  // Handle wishlist toggle
+  const handleWishlistToggle = useCallback(async () => {
     if (!isAuthenticated) {
       showToast('Please log in to add to wishlist', 'error');
       return;
@@ -91,19 +108,20 @@ const BookDetailPage = () => {
     
     try {
       if (isWishlisted) {
-        await usersAPI.removeFromWishlist(parseInt(id));
+        await usersAPI.removeFromWishlist(bookId);
         showToast('Removed from wishlist', 'success');
       } else {
-        await usersAPI.addToWishlist(parseInt(id));
+        await usersAPI.addToWishlist(bookId);
         showToast('Added to wishlist', 'success');
       }
       setIsWishlisted(!isWishlisted);
-    } catch (error) {
-      showToast(error.message || 'Failed to update wishlist', 'error');
+    } catch (err) {
+      showToast(err.message || 'Failed to update wishlist', 'error');
     }
-  };
+  }, [isAuthenticated, isWishlisted, bookId, showToast]);
 
-  const handleBorrow = async () => {
+  // Handle borrow
+  const handleBorrow = useCallback(async () => {
     if (!isAuthenticated) {
       showToast('Please log in to borrow books', 'error');
       return;
@@ -112,24 +130,25 @@ const BookDetailPage = () => {
       showToast('Please become a member to borrow books', 'error');
       return;
     }
-    if (book.available_copies === 0) {
+    if (book?.available_copies === 0) {
       showToast('This book is currently unavailable. You can reserve it.', 'error');
       return;
     }
     
     setBorrowing(true);
     try {
-      await borrowingsAPI.borrowBook(parseInt(id));
+      await borrowingsAPI.borrowBook(bookId);
       showToast('Book borrowed successfully!', 'success');
-      fetchBookDetails();
-    } catch (error) {
-      showToast(error.message || 'Failed to borrow book', 'error');
+      await fetchBookDetails();
+    } catch (err) {
+      showToast(err.message || 'Failed to borrow book', 'error');
     } finally {
       setBorrowing(false);
     }
-  };
+  }, [isAuthenticated, user?.role, book?.available_copies, bookId, showToast, fetchBookDetails]);
 
-  const handleReserve = async () => {
+  // Handle reserve
+  const handleReserve = useCallback(async () => {
     if (!isAuthenticated) {
       showToast('Please log in to reserve books', 'error');
       return;
@@ -141,23 +160,26 @@ const BookDetailPage = () => {
     
     setReserving(true);
     try {
-      await borrowingsAPI.reserveBook(parseInt(id));
+      await borrowingsAPI.reserveBook(bookId);
       showToast('Reservation placed! You\'ll be notified when available.', 'success');
-      fetchReservations();
-    } catch (error) {
-      showToast(error.message || 'Failed to reserve book', 'error');
+      await fetchReservations();
+    } catch (err) {
+      showToast(err.message || 'Failed to reserve book', 'error');
     } finally {
       setReserving(false);
     }
-  };
+  }, [isAuthenticated, user?.role, bookId, showToast, fetchReservations]);
 
-  const handleShare = () => {
+  // Handle share
+  const handleShare = useCallback(() => {
     navigator.clipboard.writeText(window.location.href);
     showToast('Link copied to clipboard!', 'success');
-  };
+  }, [showToast]);
 
-  const handleReviewSubmit = async (e) => {
+  // Handle review submit
+  const handleReviewSubmit = useCallback(async (e) => {
     e.preventDefault();
+    
     if (!isAuthenticated) {
       showToast('Please log in to leave a review', 'error');
       return;
@@ -174,16 +196,16 @@ const BookDetailPage = () => {
     setSubmitting(true);
     try {
       if (editingReview && userReview) {
-        await booksAPI.updateReview(parseInt(id), userReview.review_id, rating, reviewText);
+        await booksAPI.updateReview(bookId, userReview.review_id, rating, reviewText);
         showToast('Review updated successfully!', 'success');
       } else {
-        await booksAPI.addReview(parseInt(id), rating, reviewText);
+        await booksAPI.addReview(bookId, rating, reviewText);
         showToast('Review submitted! Thank you for your feedback.', 'success');
       }
       
-      const response = await booksAPI.getBook(parseInt(id));
+      const response = await booksAPI.getBook(bookId);
       setReviews(response.reviews || []);
-      const userRev = response.reviews?.find(r => r.user_id === user.user_id);
+      const userRev = response.reviews?.find(r => r.user_id === user?.user_id);
       setUserReview(userRev);
       
       if (!editingReview) {
@@ -191,55 +213,59 @@ const BookDetailPage = () => {
         setRating(0);
       }
       setEditingReview(false);
-    } catch (error) {
-      showToast(error.message || 'Failed to submit review', 'error');
+    } catch (err) {
+      showToast(err.message || 'Failed to submit review', 'error');
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [isAuthenticated, rating, reviewText, editingReview, userReview, bookId, user?.user_id, showToast]);
 
-  const handleEditReview = () => {
+  // Handle edit review
+  const handleEditReview = useCallback(() => {
     if (userReview) {
       setRating(userReview.rating);
       setReviewText(userReview.review_text);
       setEditingReview(true);
     }
-  };
+  }, [userReview]);
 
-  const handleDeleteReview = async () => {
+  // Handle delete review
+  const handleDeleteReview = useCallback(async () => {
     if (!window.confirm('Are you sure you want to delete your review?')) {
       return;
     }
     
     try {
-      await booksAPI.deleteReview(parseInt(id), userReview.review_id);
+      await booksAPI.deleteReview(bookId, userReview.review_id);
       showToast('Review deleted successfully', 'success');
       setUserReview(null);
       setReviewText('');
       setRating(0);
       setEditingReview(false);
       
-      const response = await booksAPI.getBook(parseInt(id));
+      const response = await booksAPI.getBook(bookId);
       setReviews(response.reviews || []);
-    } catch (error) {
-      showToast(error.message || 'Failed to delete review', 'error');
+    } catch (err) {
+      showToast(err.message || 'Failed to delete review', 'error');
     }
-  };
+  }, [bookId, userReview, showToast]);
 
-  const getProfilePhotoUrl = (photo) => {
+  // Helper functions
+  const getProfilePhotoUrl = useCallback((photo) => {
     if (photo) {
       return `http://localhost:5000/uploads/photos/${photo}`;
     }
     return null;
-  };
+  }, []);
 
-  // Safe number parsing
+  // Computed values
   const avgRating = book?.avg_rating ? parseFloat(book.avg_rating) : 0;
   const totalReviews = book?.total_reviews ? parseInt(book.total_reviews) : 0;
   const availableCopies = book?.available_copies ? parseInt(book.available_copies) : 0;
   const totalCopies = book?.total_copies ? parseInt(book.total_copies) : 0;
   const borrowCount = book?.total_borrow_count ? parseInt(book.total_borrow_count) : 0;
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
@@ -251,6 +277,26 @@ const BookDetailPage = () => {
     );
   }
 
+  // Error state
+  if (error && !book) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4">😕</div>
+          <h2 className="font-serif text-2xl font-bold text-[#2C1F14] mb-2">Something went wrong</h2>
+          <p className="text-[#9A8478] mb-6">{error}</p>
+          <button 
+            onClick={fetchBookDetails}
+            className="inline-flex items-center gap-2 px-6 py-2 bg-[#2C1F14] text-white rounded-full hover:bg-[#4A3728] transition"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Not found state
   if (!book) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
@@ -270,13 +316,13 @@ const BookDetailPage = () => {
     <div className="bg-[#FAF7F2] min-h-screen py-12">
       <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-[#9A8478] mb-8">
+        <nav className="flex items-center gap-2 text-sm text-[#9A8478] mb-8">
           <Link to="/" className="hover:text-[#C4895A] transition">Home</Link>
           <span>/</span>
           <Link to="/catalogue" className="hover:text-[#C4895A] transition">Catalogue</Link>
           <span>/</span>
           <span className="text-[#C4895A]">{book.title}</span>
-        </div>
+        </nav>
 
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Left Column - Book Cover & Buttons */}
@@ -292,11 +338,13 @@ const BookDetailPage = () => {
                   onError={(e) => e.target.style.display = 'none'}
                 />
               )}
-              <div className="absolute top-3 right-3">
-                <button onClick={handleShare} className="w-8 h-8 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-white/30 transition">
-                  <FaShare size={12} />
-                </button>
-              </div>
+              <button 
+                onClick={handleShare} 
+                className="absolute top-3 right-3 w-8 h-8 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-white/30 transition"
+                aria-label="Share book"
+              >
+                <FaShare size={12} />
+              </button>
               <div className="relative z-10">
                 <h1 className="font-serif text-base font-bold text-white mb-0.5 line-clamp-2">{book.title}</h1>
                 <p className="text-white/80 text-[10px]">by {book.author}</p>
@@ -390,13 +438,13 @@ const BookDetailPage = () => {
             </div>
 
             {/* Description */}
-            <div className="mb-6">
+            <section className="mb-6">
               <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-2">Description</h3>
               <p className="text-[#4A3728] text-sm leading-relaxed">{book.description || 'No description available.'}</p>
-            </div>
+            </section>
 
             {/* Tabs: Reviews & Reservation Queue */}
-            <div className="mt-8">
+            <section className="mt-8">
               <div className="flex items-center gap-6 border-b border-[#EAE0D0] mb-5">
                 <button 
                   onClick={() => handleTabChange('reviews')}
@@ -447,10 +495,10 @@ const BookDetailPage = () => {
                           value={reviewText} 
                           onChange={(e) => setReviewText(e.target.value)} 
                           placeholder="Share your thoughts about this book..." 
-                          rows="3" 
+                          rows={3} 
                           className="w-full px-4 py-2 text-sm border border-[#EAE0D0] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#C4895A] resize-none"
                           disabled={submitting}
-                        ></textarea>
+                        />
                         <div className="flex gap-2 mt-3">
                           <button 
                             type="submit" 
@@ -483,10 +531,10 @@ const BookDetailPage = () => {
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-serif text-base font-bold text-[#2C1F14]">Your Review</h3>
                         <div className="flex gap-2">
-                          <button onClick={handleEditReview} className="text-[#9A8478] hover:text-[#C4895A] transition">
+                          <button onClick={handleEditReview} className="text-[#9A8478] hover:text-[#C4895A] transition" aria-label="Edit review">
                             <FaEdit size={14} />
                           </button>
-                          <button onClick={handleDeleteReview} className="text-[#9A8478] hover:text-red-500 transition">
+                          <button onClick={handleDeleteReview} className="text-[#9A8478] hover:text-red-500 transition" aria-label="Delete review">
                             <FaTrash size={14} />
                           </button>
                         </div>
@@ -504,7 +552,7 @@ const BookDetailPage = () => {
                   <div className="space-y-4">
                     {reviews.filter(r => !userReview || r.review_id !== userReview.review_id).length > 0 ? (
                       reviews.filter(r => !userReview || r.review_id !== userReview.review_id).map((review) => (
-                        <div key={review.review_id} className="pb-4 border-b border-[#EAE0D0] last:border-0">
+                        <article key={review.review_id} className="pb-4 border-b border-[#EAE0D0] last:border-0">
                           <div className="flex items-center gap-3 mb-2">
                             {getProfilePhotoUrl(review.profile_picture) ? (
                               <img 
@@ -532,7 +580,7 @@ const BookDetailPage = () => {
                             </div>
                           </div>
                           <p className="text-[#4A3728] text-sm leading-relaxed ml-12">{review.review_text}</p>
-                        </div>
+                        </article>
                       ))
                     ) : (
                       <div className="text-center py-8">
@@ -585,7 +633,7 @@ const BookDetailPage = () => {
                   )}
                 </div>
               )}
-            </div>
+            </section>
           </div>
         </div>
       </div>
