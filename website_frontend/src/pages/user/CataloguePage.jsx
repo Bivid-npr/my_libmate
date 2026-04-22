@@ -4,6 +4,13 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { FaStar, FaThLarge, FaList, FaArrowLeft, FaArrowRight, FaTimes, FaBook } from 'react-icons/fa';
 import { booksAPI } from '../../services/api';
 
+// Language options
+const LANGUAGES = [
+  'English', 'Spanish', 'French', 'German', 'Chinese', 
+  'Japanese', 'Russian', 'Italian', 'Portuguese', 'Arabic',
+  'Hindi', 'Korean', 'Dutch', 'Swedish', 'Norwegian'
+];
+
 // Same card component as HomePage for Grid View
 const BookGridCard = ({ book }) => {
   const getStatusDisplay = () => {
@@ -88,6 +95,9 @@ const BookListCard = ({ book }) => (
           <span className="text-xs text-[#9A8478]">({book.total_reviews || 0})</span>
         </div>
         <span className="book-genre-tag text-[10.5px] px-1.5 py-0.5 bg-[#EAE0D0] rounded-full text-[#6B4F40]">{book.genre || 'General'}</span>
+        {book.language && (
+          <span className="text-xs text-[#9A8478]">{book.language}</span>
+        )}
         <span className="text-xs text-[#9A8478]">{book.total_borrow_count || 0} borrows</span>
         <span className={`text-xs font-medium ${book.available_copies > 0 ? 'text-green-600' : 'text-red-600'}`}>
           {book.available_copies > 0 ? 'Available' : 'Unavailable'}
@@ -211,6 +221,7 @@ const CataloguePage = () => {
   
   // Filter states
   const [selectedGenres, setSelectedGenres] = useState([]);
+  const [selectedLanguages, setSelectedLanguages] = useState([]);
   const [availableOnly, setAvailableOnly] = useState(false);
   const [yearFrom, setYearFrom] = useState('');
   const [yearTo, setYearTo] = useState('');
@@ -240,6 +251,7 @@ const CataloguePage = () => {
     const q = searchParams.get('q');
     const type = searchParams.get('type');
     const genre = searchParams.get('genre');
+    const lang = searchParams.get('language');
     
     if (q) {
       setSearchQuery(q);
@@ -254,6 +266,13 @@ const CataloguePage = () => {
       setSelectedGenres(genre.split(','));
     } else {
       setSelectedGenres([]);
+    }
+    
+    // Handle multiple languages from URL (comma-separated)
+    if (lang) {
+      setSelectedLanguages(lang.split(','));
+    } else {
+      setSelectedLanguages([]);
     }
   }, [searchParams]);
 
@@ -278,6 +297,11 @@ const CataloguePage = () => {
           params.genre = selectedGenres.join(',');
         }
         
+        // Handle multiple languages - send as comma-separated string
+        if (selectedLanguages.length > 0) {
+          params.language = selectedLanguages.join(',');
+        }
+        
         if (availableOnly) {
           params.available_only = true;
         }
@@ -288,6 +312,8 @@ const CataloguePage = () => {
         if (yearTo) {
           params.year_to = yearTo;
         }
+        
+        console.log('Fetching books with params:', params); // Debug log
         
         const data = await booksAPI.getBooks(params);
         setBooks(data.books || []);
@@ -302,7 +328,7 @@ const CataloguePage = () => {
     };
     
     fetchBooks();
-  }, [currentPage, selectedGenres, availableOnly, yearFrom, yearTo, searchQuery]);
+  }, [currentPage, selectedGenres, selectedLanguages, availableOnly, yearFrom, yearTo, searchQuery]);
 
   // Update URL when filters change
   useEffect(() => {
@@ -310,12 +336,15 @@ const CataloguePage = () => {
     if (selectedGenres.length > 0) {
       params.genre = selectedGenres.join(',');
     }
+    if (selectedLanguages.length > 0) {
+      params.language = selectedLanguages.join(',');
+    }
     if (searchQuery) {
       params.q = searchQuery;
       params.type = searchType;
     }
     setSearchParams(params);
-  }, [selectedGenres, searchQuery, searchType, setSearchParams]);
+  }, [selectedGenres, selectedLanguages, searchQuery, searchType, setSearchParams]);
 
   // Sort books
   const getSortedBooks = () => {
@@ -345,6 +374,7 @@ const CataloguePage = () => {
 
   const clearAllFilters = () => {
     setSelectedGenres([]);
+    setSelectedLanguages([]);
     setAvailableOnly(false);
     setYearFrom('');
     setYearTo('');
@@ -361,6 +391,12 @@ const CataloguePage = () => {
     setYearTo(tempYearTo);
     setCurrentPage(1);
   };
+
+  const hasActiveFilters = selectedGenres.length > 0 || 
+                           selectedLanguages.length > 0 || 
+                           availableOnly || 
+                           yearFrom || 
+                           yearTo;
 
   if (loading && books.length === 0) {
     return (
@@ -401,6 +437,41 @@ const CataloguePage = () => {
         <div className="results-layout grid grid-cols-1 md:grid-cols-[240px_1fr] gap-8">
           {/* Filter Sidebar */}
           <aside className="filter-sidebar sticky top-24">
+            {/* Active Filters */}
+            {hasActiveFilters && (
+              <div className="filter-block bg-[#F3EDE3] border border-[#EAE0D0] rounded-[12px] p-4 mb-3">
+                <div className="filter-block-title text-xs font-bold text-[#2C1F14] uppercase tracking-wide mb-3">
+                  Active Filters
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedGenres.map(genre => (
+                    <span key={genre} className="inline-flex items-center gap-1 px-2 py-1 bg-[#C4895A]/10 text-[#C4895A] text-xs rounded-full">
+                      {genre}
+                      <button onClick={() => setSelectedGenres(selectedGenres.filter(g => g !== genre))}>
+                        <FaTimes size={10} />
+                      </button>
+                    </span>
+                  ))}
+                  {selectedLanguages.map(lang => (
+                    <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-[#C4895A]/10 text-[#C4895A] text-xs rounded-full">
+                      {lang}
+                      <button onClick={() => setSelectedLanguages(selectedLanguages.filter(l => l !== lang))}>
+                        <FaTimes size={10} />
+                      </button>
+                    </span>
+                  ))}
+                  {availableOnly && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#C4895A]/10 text-[#C4895A] text-xs rounded-full">
+                      Available Only
+                      <button onClick={() => setAvailableOnly(false)}>
+                        <FaTimes size={10} />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Availability Filter */}
             <div className="filter-block bg-[#F3EDE3] border border-[#EAE0D0] rounded-[12px] p-4 mb-3">
               <div className="filter-block-title text-xs font-bold text-[#2C1F14] uppercase tracking-wide mb-3">
@@ -410,7 +481,10 @@ const CataloguePage = () => {
                 <input 
                   type="checkbox" 
                   checked={availableOnly} 
-                  onChange={() => setAvailableOnly(!availableOnly)}
+                  onChange={() => {
+                    setAvailableOnly(!availableOnly);
+                    setCurrentPage(1);
+                  }}
                   className="accent-[#C4895A]" 
                 />
                 <span className="text-[13px] text-[#4A3728]">Available only</span>
@@ -443,10 +517,47 @@ const CataloguePage = () => {
                         } else {
                           setSelectedGenres([...selectedGenres, genre]);
                         }
+                        setCurrentPage(1);
                       }}
                       className="accent-[#C4895A]" 
                     />
                     <span className="text-[13px] text-[#4A3728]">{genre}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Language Filter */}
+            <div className="filter-block bg-[#F3EDE3] border border-[#EAE0D0] rounded-[12px] p-4 mb-3">
+              <div className="filter-block-title text-xs font-bold text-[#2C1F14] uppercase tracking-wide mb-3">
+                Language
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                <label className="flex items-center gap-2 cursor-pointer pb-2 border-b border-[#EAE0D0]">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedLanguages.length === 0}
+                    onChange={() => setSelectedLanguages([])}
+                    className="accent-[#C4895A]" 
+                  />
+                  <span className="text-[13px] font-medium text-[#2C1F14]">All Languages</span>
+                </label>
+                {LANGUAGES.map((language) => (
+                  <label key={language} className="flex items-center gap-2 cursor-pointer ml-1">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedLanguages.includes(language)}
+                      onChange={() => {
+                        if (selectedLanguages.includes(language)) {
+                          setSelectedLanguages(selectedLanguages.filter(l => l !== language));
+                        } else {
+                          setSelectedLanguages([...selectedLanguages, language]);
+                        }
+                        setCurrentPage(1);
+                      }}
+                      className="accent-[#C4895A]" 
+                    />
+                    <span className="text-[13px] text-[#4A3728]">{language}</span>
                   </label>
                 ))}
               </div>

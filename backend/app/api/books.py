@@ -13,6 +13,7 @@ def get_books():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 12, type=int)
     genre = request.args.get('genre')
+    language = request.args.get('language')  # ADDED: Language filter
     search = request.args.get('search')
     available_only = request.args.get('available_only', 'false').lower() == 'true'
     year_from = request.args.get('year_from', type=int)
@@ -39,6 +40,22 @@ def get_books():
             for i, g in enumerate(genres_list):
                 params[f'genre_{i}'] = g
                 count_params[f'genre_{i}'] = g
+    
+    # ADDED: Handle multiple languages (comma-separated)
+    if language:
+        languages_list = language.split(',')
+        if len(languages_list) == 1:
+            query += " AND language = :language"
+            count_query += " AND language = :language"
+            params['language'] = languages_list[0]
+            count_params['language'] = languages_list[0]
+        else:
+            language_conditions = " OR ".join([f"language = :lang_{i}" for i in range(len(languages_list))])
+            query += f" AND ({language_conditions})"
+            count_query += f" AND ({language_conditions})"
+            for i, lang in enumerate(languages_list):
+                params[f'lang_{i}'] = lang
+                count_params[f'lang_{i}'] = lang
     
     if search:
         query += " AND (title LIKE :search OR author LIKE :search OR genre LIKE :search)"
@@ -97,6 +114,16 @@ def get_genres():
     )
     genres = [row[0] for row in result]
     return jsonify(genres), 200
+
+
+@books_bp.route('/languages', methods=['GET'])
+def get_languages():
+    """Get all unique languages"""
+    result = db.session.execute(
+        text("SELECT DISTINCT language FROM books WHERE language IS NOT NULL AND is_archived = FALSE ORDER BY language")
+    )
+    languages = [row[0] for row in result]
+    return jsonify(languages), 200
 
 
 @books_bp.route('/<int:book_id>', methods=['GET'])
