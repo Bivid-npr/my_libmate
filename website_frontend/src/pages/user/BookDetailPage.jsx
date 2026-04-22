@@ -313,7 +313,7 @@ const BookDetailPage = () => {
   }
 
   return (
-    <div className="bg-[#FAF7F2] min-h-screen py-12">
+    <div className="bg-[#FAF7F2] min-h-screen py-16">
       <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-[#9A8478] mb-8">
