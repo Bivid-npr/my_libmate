@@ -204,6 +204,19 @@ export const borrowingsAPI = {
       method: 'POST',
       body: JSON.stringify({ payment_method: paymentMethod })
     }),
+  
+  borrowBook: (bookId) => 
+    apiRequest(`/borrowings/borrow/${bookId}`, {
+      method: 'POST'
+    }),
+  
+  reserveBook: (bookId) => 
+    apiRequest(`/borrowings/reserve/${bookId}`, {
+      method: 'POST'
+    }),
+  
+  getReservations: (bookId) =>
+    apiRequest(`/borrowings/reservations/${bookId}`),
 };
 
 // ============ TRENDING API ============

@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { FaStar, FaRegStar, FaHeart, FaRegHeart, FaBookOpen, FaShare, FaStarHalfAlt, FaUsers } from 'react-icons/fa';
-import { getBookById, getReviewsByBookId } from '../../data/mockData';
+import { FaStar, FaRegStar, FaHeart, FaRegHeart, FaBookOpen, FaShare, FaStarHalfAlt, FaUsers, FaEdit, FaTrash } from 'react-icons/fa';
+import { booksAPI, usersAPI, borrowingsAPI } from '../../services/api';
 
 const BookDetailPage = () => {
   const { id } = useParams();
@@ -17,27 +17,93 @@ const BookDetailPage = () => {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [activeTab, setActiveTab] = useState('reviews');
+  const [submitting, setSubmitting] = useState(false);
+  const [userReview, setUserReview] = useState(null);
+  const [editingReview, setEditingReview] = useState(false);
+  const [reservations, setReservations] = useState([]);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
+  const [borrowing, setBorrowing] = useState(false);
+  const [reserving, setReserving] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => {
-      const bookData = getBookById(id);
-      const reviewsData = getReviewsByBookId(parseInt(id));
-      setBook(bookData);
-      setReviews(reviewsData);
-      setLoading(false);
-    }, 500);
-  }, [id]);
+    fetchBookDetails();
+  }, [id, isAuthenticated]);
 
-  const handleWishlistToggle = () => {
+  const fetchBookDetails = async () => {
+    setLoading(true);
+    try {
+      const response = await booksAPI.getBook(parseInt(id));
+      setBook(response.book);
+      setReviews(response.reviews || []);
+      
+      // Check if user has already reviewed this book
+      if (isAuthenticated && user) {
+        const userRev = response.reviews?.find(r => r.user_id === user.user_id);
+        if (userRev) {
+          setUserReview(userRev);
+          setRating(userRev.rating);
+          setReviewText(userRev.review_text);
+        }
+        
+        // Check wishlist status
+        try {
+          const wishlist = await usersAPI.getWishlist();
+          setIsWishlisted(wishlist.some(item => item.book_id === parseInt(id)));
+        } catch (error) {
+          console.error('Error checking wishlist:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching book:', error);
+      showToast('Failed to load book details', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchReservations = async () => {
+    setReservationsLoading(true);
+    try {
+      const response = await fetch(`http://localhost:5000/api/books/${id}/reservations`);
+      if (response.ok) {
+        const data = await response.json();
+        setReservations(data);
+      }
+    } catch (error) {
+      console.error('Error fetching reservations:', error);
+    } finally {
+      setReservationsLoading(false);
+    }
+  };
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'queue' && reservations.length === 0) {
+      fetchReservations();
+    }
+  };
+
+  const handleWishlistToggle = async () => {
     if (!isAuthenticated) {
       showToast('Please log in to add to wishlist', 'error');
       return;
     }
-    setIsWishlisted(!isWishlisted);
-    showToast(isWishlisted ? 'Removed from wishlist' : 'Added to wishlist', 'success');
+    
+    try {
+      if (isWishlisted) {
+        await usersAPI.removeFromWishlist(parseInt(id));
+        showToast('Removed from wishlist', 'success');
+      } else {
+        await usersAPI.addToWishlist(parseInt(id));
+        showToast('Added to wishlist', 'success');
+      }
+      setIsWishlisted(!isWishlisted);
+    } catch (error) {
+      showToast(error.message || 'Failed to update wishlist', 'error');
+    }
   };
 
-  const handleBorrow = () => {
+  const handleBorrow = async () => {
     if (!isAuthenticated) {
       showToast('Please log in to borrow books', 'error');
       return;
@@ -50,10 +116,20 @@ const BookDetailPage = () => {
       showToast('This book is currently unavailable. You can reserve it.', 'error');
       return;
     }
-    showToast('Please visit the library counter to borrow this book', 'success');
+    
+    setBorrowing(true);
+    try {
+      await borrowingsAPI.borrowBook(parseInt(id));
+      showToast('Book borrowed successfully!', 'success');
+      fetchBookDetails();
+    } catch (error) {
+      showToast(error.message || 'Failed to borrow book', 'error');
+    } finally {
+      setBorrowing(false);
+    }
   };
 
-  const handleReserve = () => {
+  const handleReserve = async () => {
     if (!isAuthenticated) {
       showToast('Please log in to reserve books', 'error');
       return;
@@ -62,7 +138,17 @@ const BookDetailPage = () => {
       showToast('Please become a member to reserve books', 'error');
       return;
     }
-    showToast('Reservation placed! You\'ll be notified when available.', 'success');
+    
+    setReserving(true);
+    try {
+      await borrowingsAPI.reserveBook(parseInt(id));
+      showToast('Reservation placed! You\'ll be notified when available.', 'success');
+      fetchReservations();
+    } catch (error) {
+      showToast(error.message || 'Failed to reserve book', 'error');
+    } finally {
+      setReserving(false);
+    }
   };
 
   const handleShare = () => {
@@ -70,7 +156,7 @@ const BookDetailPage = () => {
     showToast('Link copied to clipboard!', 'success');
   };
 
-  const handleReviewSubmit = (e) => {
+  const handleReviewSubmit = async (e) => {
     e.preventDefault();
     if (!isAuthenticated) {
       showToast('Please log in to leave a review', 'error');
@@ -84,10 +170,75 @@ const BookDetailPage = () => {
       showToast('Please write your review', 'error');
       return;
     }
-    showToast('Review submitted! Thank you for your feedback.', 'success');
-    setReviewText('');
-    setRating(0);
+    
+    setSubmitting(true);
+    try {
+      if (editingReview && userReview) {
+        await booksAPI.updateReview(parseInt(id), userReview.review_id, rating, reviewText);
+        showToast('Review updated successfully!', 'success');
+      } else {
+        await booksAPI.addReview(parseInt(id), rating, reviewText);
+        showToast('Review submitted! Thank you for your feedback.', 'success');
+      }
+      
+      const response = await booksAPI.getBook(parseInt(id));
+      setReviews(response.reviews || []);
+      const userRev = response.reviews?.find(r => r.user_id === user.user_id);
+      setUserReview(userRev);
+      
+      if (!editingReview) {
+        setReviewText('');
+        setRating(0);
+      }
+      setEditingReview(false);
+    } catch (error) {
+      showToast(error.message || 'Failed to submit review', 'error');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const handleEditReview = () => {
+    if (userReview) {
+      setRating(userReview.rating);
+      setReviewText(userReview.review_text);
+      setEditingReview(true);
+    }
+  };
+
+  const handleDeleteReview = async () => {
+    if (!window.confirm('Are you sure you want to delete your review?')) {
+      return;
+    }
+    
+    try {
+      await booksAPI.deleteReview(parseInt(id), userReview.review_id);
+      showToast('Review deleted successfully', 'success');
+      setUserReview(null);
+      setReviewText('');
+      setRating(0);
+      setEditingReview(false);
+      
+      const response = await booksAPI.getBook(parseInt(id));
+      setReviews(response.reviews || []);
+    } catch (error) {
+      showToast(error.message || 'Failed to delete review', 'error');
+    }
+  };
+
+  const getProfilePhotoUrl = (photo) => {
+    if (photo) {
+      return `http://localhost:5000/uploads/photos/${photo}`;
+    }
+    return null;
+  };
+
+  // Safe number parsing
+  const avgRating = book?.avg_rating ? parseFloat(book.avg_rating) : 0;
+  const totalReviews = book?.total_reviews ? parseInt(book.total_reviews) : 0;
+  const availableCopies = book?.available_copies ? parseInt(book.available_copies) : 0;
+  const totalCopies = book?.total_copies ? parseInt(book.total_copies) : 0;
+  const borrowCount = book?.total_borrow_count ? parseInt(book.total_borrow_count) : 0;
 
   if (loading) {
     return (
@@ -115,8 +266,6 @@ const BookDetailPage = () => {
     );
   }
 
-  const avgRating = book.avg_rating || 0;
-
   return (
     <div className="bg-[#FAF7F2] min-h-screen py-12">
       <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
@@ -133,8 +282,16 @@ const BookDetailPage = () => {
           {/* Left Column - Book Cover & Buttons */}
           <div className="lg:w-[280px] flex-shrink-0">
             {/* Book Cover */}
-            <div className={`rounded-2xl aspect-[2/3] w-full flex flex-col justify-end p-5 shadow-xl relative overflow-hidden mb-4`} style={{ background: book.cover_color }}>
+            <div className="rounded-2xl aspect-[2/3] w-full flex flex-col justify-end p-5 shadow-xl relative overflow-hidden mb-4 bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
+              {book.cover_image && (
+                <img 
+                  src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                  alt={book.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => e.target.style.display = 'none'}
+                />
+              )}
               <div className="absolute top-3 right-3">
                 <button onClick={handleShare} className="w-8 h-8 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-white/30 transition">
                   <FaShare size={12} />
@@ -146,19 +303,34 @@ const BookDetailPage = () => {
               </div>
             </div>
 
-            {/* Action Buttons - Same width as cover */}
+            {/* Action Buttons */}
             <div className="space-y-2 w-full">
-              {book.available_copies > 0 ? (
-                <button onClick={handleBorrow} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition text-sm font-medium">
+              {availableCopies > 0 ? (
+                <button 
+                  onClick={handleBorrow} 
+                  disabled={borrowing}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition text-sm font-medium disabled:opacity-50"
+                >
                   <FaBookOpen size={14} />
-                  Borrow This Book
+                  {borrowing ? 'Processing...' : 'Borrow This Book'}
                 </button>
               ) : (
-                <button onClick={handleReserve} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium">
-                  Reserve This Book
+                <button 
+                  onClick={handleReserve}
+                  disabled={reserving}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium disabled:opacity-50"
+                >
+                  {reserving ? 'Processing...' : 'Reserve This Book'}
                 </button>
               )}
-              <button onClick={handleWishlistToggle} className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg transition text-sm font-medium ${isWishlisted ? 'border-red-500 text-red-500 bg-red-50' : 'border-[#EAE0D0] text-[#4A3728] hover:border-[#C4895A] hover:text-[#C4895A]'}`}>
+              <button 
+                onClick={handleWishlistToggle} 
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg transition text-sm font-medium ${
+                  isWishlisted 
+                    ? 'border-red-500 text-red-500 bg-red-50' 
+                    : 'border-[#EAE0D0] text-[#4A3728] hover:border-[#C4895A] hover:text-[#C4895A]'
+                }`}
+              >
                 {isWishlisted ? <FaHeart size={14} /> : <FaRegHeart size={14} />}
                 {isWishlisted ? 'In Wishlist' : 'Add to Wishlist'}
               </button>
@@ -169,24 +341,28 @@ const BookDetailPage = () => {
           <div className="flex-1">
             {/* Genre Tags */}
             <div className="flex flex-wrap gap-2 mb-3">
-              <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.genre}</span>
-              <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.language}</span>
-              <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.published_year}</span>
+              {book.genre && <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.genre}</span>}
+              <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.language || 'English'}</span>
+              {book.published_year && <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.published_year}</span>}
             </div>
 
             {/* Title & Author */}
             <h1 className="font-serif text-3xl font-bold text-[#2C1F14] mb-1">{book.title}</h1>
-            <p className="text-[#9A8478] text-sm mb-4">{book.author} · {book.publisher} · ISBN: {book.isbn}</p>
+            <p className="text-[#9A8478] text-sm mb-4">
+              {book.author} · {book.publisher || 'Unknown Publisher'} · ISBN: {book.isbn || 'N/A'}
+            </p>
 
             {/* Stats Row */}
             <div className="flex flex-wrap items-center gap-6 mb-6 pb-4 border-b border-[#EAE0D0]">
               <div>
                 <div className="text-xs text-[#9A8478] uppercase tracking-wide">Available Copies</div>
-                <div className="text-xl font-bold text-[#2C1F14]">{book.available_copies} <span className="text-sm font-normal text-[#9A8478]">/ {book.total_copies}</span></div>
+                <div className="text-xl font-bold text-[#2C1F14]">
+                  {availableCopies} <span className="text-sm font-normal text-[#9A8478]">/ {totalCopies}</span>
+                </div>
               </div>
               <div>
                 <div className="text-xs text-[#9A8478] uppercase tracking-wide">Times Borrowed</div>
-                <div className="text-xl font-bold text-[#2C1F14]">{book.total_borrow_count}</div>
+                <div className="text-xl font-bold text-[#2C1F14]">{borrowCount}</div>
               </div>
               <div>
                 <div className="text-xs text-[#9A8478] uppercase tracking-wide">Rating</div>
@@ -198,7 +374,7 @@ const BookDetailPage = () => {
                         <span key={i}>
                           {starValue <= Math.floor(avgRating) ? (
                             <FaStar className="text-yellow-400 text-sm" />
-                          ) : starValue === Math.ceil(avgRating) && avgRating % 1 !== 0 ? (
+                          ) : starValue === Math.ceil(avgRating) && avgRating % 1 >= 0.5 ? (
                             <FaStarHalfAlt className="text-yellow-400 text-sm" />
                           ) : (
                             <FaRegStar className="text-gray-300 text-sm" />
@@ -207,8 +383,8 @@ const BookDetailPage = () => {
                       );
                     })}
                   </div>
-                  <span className="text-sm font-medium text-[#2C1F14]">{avgRating}</span>
-                  <span className="text-xs text-[#9A8478]">({book.total_reviews || 0} reviews)</span>
+                  <span className="text-sm font-medium text-[#2C1F14]">{avgRating.toFixed(1)}</span>
+                  <span className="text-xs text-[#9A8478]">({totalReviews} reviews)</span>
                 </div>
               </div>
             </div>
@@ -216,20 +392,20 @@ const BookDetailPage = () => {
             {/* Description */}
             <div className="mb-6">
               <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-2">Description</h3>
-              <p className="text-[#4A3728] text-sm leading-relaxed">{book.description}</p>
+              <p className="text-[#4A3728] text-sm leading-relaxed">{book.description || 'No description available.'}</p>
             </div>
 
             {/* Tabs: Reviews & Reservation Queue */}
             <div className="mt-8">
               <div className="flex items-center gap-6 border-b border-[#EAE0D0] mb-5">
                 <button 
-                  onClick={() => setActiveTab('reviews')}
+                  onClick={() => handleTabChange('reviews')}
                   className={`pb-2.5 text-sm font-medium transition-all ${activeTab === 'reviews' ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'}`}
                 >
-                  Reviews
+                  Reviews ({totalReviews})
                 </button>
                 <button 
-                  onClick={() => setActiveTab('queue')}
+                  onClick={() => handleTabChange('queue')}
                   className={`pb-2.5 text-sm font-medium transition-all ${activeTab === 'queue' ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'}`}
                 >
                   Reservation Queue
@@ -240,63 +416,118 @@ const BookDetailPage = () => {
               {activeTab === 'reviews' && (
                 <div>
                   {/* Write Review Section */}
-                  <div className="bg-[#F3EDE3] rounded-xl p-5 mb-6">
-                    <h3 className="font-serif text-base font-bold text-[#2C1F14] mb-3">Write a Review</h3>
-                    <form onSubmit={handleReviewSubmit}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm text-[#4A3728]">Your Rating:</span>
-                        <div className="flex items-center gap-1">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <button
-                              key={star}
+                  {isAuthenticated && (!userReview || editingReview) && (
+                    <div className="bg-[#F3EDE3] rounded-xl p-5 mb-6">
+                      <h3 className="font-serif text-base font-bold text-[#2C1F14] mb-3">
+                        {editingReview ? 'Edit Your Review' : 'Write a Review'}
+                      </h3>
+                      <form onSubmit={handleReviewSubmit}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm text-[#4A3728]">Your Rating:</span>
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                type="button"
+                                onMouseEnter={() => setHoverRating(star)}
+                                onMouseLeave={() => setHoverRating(0)}
+                                onClick={() => setRating(star)}
+                                className="focus:outline-none"
+                              >
+                                {(hoverRating || rating) >= star ? (
+                                  <FaStar className="text-yellow-400 text-base" />
+                                ) : (
+                                  <FaRegStar className="text-gray-400 text-base" />
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <textarea 
+                          value={reviewText} 
+                          onChange={(e) => setReviewText(e.target.value)} 
+                          placeholder="Share your thoughts about this book..." 
+                          rows="3" 
+                          className="w-full px-4 py-2 text-sm border border-[#EAE0D0] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#C4895A] resize-none"
+                          disabled={submitting}
+                        ></textarea>
+                        <div className="flex gap-2 mt-3">
+                          <button 
+                            type="submit" 
+                            disabled={submitting}
+                            className="px-4 py-1.5 text-sm bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition disabled:opacity-50"
+                          >
+                            {submitting ? 'Submitting...' : (editingReview ? 'Update Review' : 'Submit Review')}
+                          </button>
+                          {editingReview && (
+                            <button 
                               type="button"
-                              onMouseEnter={() => setHoverRating(star)}
-                              onMouseLeave={() => setHoverRating(0)}
-                              onClick={() => setRating(star)}
-                              className="focus:outline-none"
+                              onClick={() => {
+                                setEditingReview(false);
+                                setReviewText('');
+                                setRating(0);
+                              }}
+                              className="px-4 py-1.5 text-sm border border-[#EAE0D0] text-[#4A3728] rounded-lg hover:bg-gray-50 transition"
                             >
-                              {(hoverRating || rating) >= star ? (
-                                <FaStar className="text-yellow-400 text-base" />
-                              ) : (
-                                <FaRegStar className="text-gray-400 text-base" />
-                              )}
+                              Cancel
                             </button>
-                          ))}
+                          )}
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* User's Existing Review */}
+                  {userReview && !editingReview && (
+                    <div className="bg-[#F3EDE3] rounded-xl p-5 mb-6">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-serif text-base font-bold text-[#2C1F14]">Your Review</h3>
+                        <div className="flex gap-2">
+                          <button onClick={handleEditReview} className="text-[#9A8478] hover:text-[#C4895A] transition">
+                            <FaEdit size={14} />
+                          </button>
+                          <button onClick={handleDeleteReview} className="text-[#9A8478] hover:text-red-500 transition">
+                            <FaTrash size={14} />
+                          </button>
                         </div>
                       </div>
-                      <textarea 
-                        value={reviewText} 
-                        onChange={(e) => setReviewText(e.target.value)} 
-                        placeholder="Share your thoughts about this book..." 
-                        rows="3" 
-                        className="w-full px-4 py-2 text-sm border border-[#EAE0D0] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#C4895A] resize-none"
-                      ></textarea>
-                      <button type="submit" className="mt-3 px-4 py-1.5 text-sm bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition">
-                        Submit Review
-                      </button>
-                    </form>
-                  </div>
+                      <div className="flex items-center gap-1 mb-2">
+                        {[...Array(5)].map((_, i) => (
+                          <FaStar key={i} className={`text-sm ${i < userReview.rating ? 'text-yellow-400' : 'text-gray-300'}`} />
+                        ))}
+                      </div>
+                      <p className="text-[#4A3728] text-sm leading-relaxed">{userReview.review_text}</p>
+                    </div>
+                  )}
 
                   {/* Reviews List */}
                   <div className="space-y-4">
-                    {reviews.length > 0 ? (
-                      reviews.map((review) => (
+                    {reviews.filter(r => !userReview || r.review_id !== userReview.review_id).length > 0 ? (
+                      reviews.filter(r => !userReview || r.review_id !== userReview.review_id).map((review) => (
                         <div key={review.review_id} className="pb-4 border-b border-[#EAE0D0] last:border-0">
                           <div className="flex items-center gap-3 mb-2">
-                            <div className="w-9 h-9 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded-full flex items-center justify-center text-white text-xs font-medium">
-                              {review.user_id === 1 ? 'PG' : review.user_id === 2 ? 'AT' : 'BN'}
-                            </div>
-                            <div>
-                              <div className="font-medium text-sm text-[#2C1F14]">
-                                {review.user_id === 1 ? 'Pujan G.' : review.user_id === 2 ? 'Alice T.' : 'Bibidh N.'}
+                            {getProfilePhotoUrl(review.profile_picture) ? (
+                              <img 
+                                src={getProfilePhotoUrl(review.profile_picture)} 
+                                alt={review.full_name}
+                                className="w-9 h-9 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded-full flex items-center justify-center text-white text-xs font-medium">
+                                {review.full_name?.charAt(0) || 'U'}
                               </div>
+                            )}
+                            <div>
+                              <div className="font-medium text-sm text-[#2C1F14]">{review.full_name}</div>
                               <div className="flex items-center gap-1">
                                 <div className="flex items-center gap-0.5">
                                   {[...Array(5)].map((_, i) => (
                                     <FaStar key={i} className={`text-[10px] ${i < review.rating ? 'text-yellow-400' : 'text-gray-300'}`} />
                                   ))}
                                 </div>
-                                <span className="text-[10px] text-[#9A8478]">{new Date(review.created_at).toLocaleDateString()}</span>
+                                <span className="text-[10px] text-[#9A8478]">
+                                  {review.created_at ? new Date(review.created_at).toLocaleDateString() : 'Recently'}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -314,16 +545,43 @@ const BookDetailPage = () => {
 
               {/* Reservation Queue Tab */}
               {activeTab === 'queue' && (
-                <div className="bg-[#F3EDE3] rounded-xl p-8 text-center">
-                  <FaUsers className="text-4xl text-[#9A8478] mx-auto mb-3" />
-                  <p className="text-[#4A3728] text-sm mb-3">No active reservations for this book.</p>
-                  {book.available_copies === 0 && (
-                    <button 
-                      onClick={handleReserve} 
-                      className="px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm"
-                    >
-                      Be the first to reserve
-                    </button>
+                <div className="bg-[#F3EDE3] rounded-xl p-8">
+                  {reservationsLoading ? (
+                    <div className="text-center">
+                      <div className="w-8 h-8 border-2 border-[#C4895A] border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                      <p className="text-[#9A8478] text-sm">Loading reservations...</p>
+                    </div>
+                  ) : reservations.length > 0 ? (
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-[#2C1F14] mb-3">Current Reservation Queue ({reservations.length})</h4>
+                      {reservations.map((res, index) => (
+                        <div key={res.reservation_id} className="flex items-center justify-between p-3 bg-white rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <span className="w-6 h-6 bg-[#C4895A] text-white rounded-full flex items-center justify-center text-xs font-medium">
+                              {index + 1}
+                            </span>
+                            <span className="text-sm text-[#2C1F14]">{res.user_name || res.full_name || `User #${res.user_id}`}</span>
+                          </div>
+                          <span className="text-xs text-[#9A8478]">
+                            Reserved: {res.reserved_at ? new Date(res.reserved_at).toLocaleDateString() : 'Recently'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <FaUsers className="text-4xl text-[#9A8478] mx-auto mb-3" />
+                      <p className="text-[#4A3728] text-sm mb-3">No active reservations for this book.</p>
+                      {availableCopies === 0 && isAuthenticated && user?.role === 'member' && (
+                        <button 
+                          onClick={handleReserve}
+                          disabled={reserving}
+                          className="px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm disabled:opacity-50"
+                        >
+                          {reserving ? 'Processing...' : 'Be the first to reserve'}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
