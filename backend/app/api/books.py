@@ -13,8 +13,9 @@ def get_books():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 12, type=int)
     genre = request.args.get('genre')
-    language = request.args.get('language')  # ADDED: Language filter
+    language = request.args.get('language')
     search = request.args.get('search')
+    search_type = request.args.get('type', 'all')  # ADDED: Search type
     available_only = request.args.get('available_only', 'false').lower() == 'true'
     year_from = request.args.get('year_from', type=int)
     year_to = request.args.get('year_to', type=int)
@@ -25,7 +26,28 @@ def get_books():
     params = {}
     count_params = {}
     
-    # Handle multiple genres (comma-separated)
+    # Handle search with type-specific filtering
+    if search:
+        if search_type == 'title':
+            query += " AND title LIKE :search"
+            count_query += " AND title LIKE :search"
+        elif search_type == 'author':
+            query += " AND author LIKE :search"
+            count_query += " AND author LIKE :search"
+        elif search_type == 'isbn':
+            query += " AND isbn LIKE :search"
+            count_query += " AND isbn LIKE :search"
+        elif search_type == 'genre':
+            query += " AND genre LIKE :search"
+            count_query += " AND genre LIKE :search"
+        else:  # 'all' - search across multiple fields
+            query += " AND (title LIKE :search OR author LIKE :search OR isbn LIKE :search OR genre LIKE :search)"
+            count_query += " AND (title LIKE :search OR author LIKE :search OR isbn LIKE :search OR genre LIKE :search)"
+        
+        params['search'] = f'%{search}%'
+        count_params['search'] = f'%{search}%'
+    
+    # Handle multiple genres (comma-separated) - this is for FILTER sidebar
     if genre:
         genres_list = genre.split(',')
         if len(genres_list) == 1:
@@ -41,7 +63,7 @@ def get_books():
                 params[f'genre_{i}'] = g
                 count_params[f'genre_{i}'] = g
     
-    # ADDED: Handle multiple languages (comma-separated)
+    # Handle multiple languages (comma-separated)
     if language:
         languages_list = language.split(',')
         if len(languages_list) == 1:
@@ -56,12 +78,6 @@ def get_books():
             for i, lang in enumerate(languages_list):
                 params[f'lang_{i}'] = lang
                 count_params[f'lang_{i}'] = lang
-    
-    if search:
-        query += " AND (title LIKE :search OR author LIKE :search OR genre LIKE :search)"
-        count_query += " AND (title LIKE :search OR author LIKE :search OR genre LIKE :search)"
-        params['search'] = f'%{search}%'
-        count_params['search'] = f'%{search}%'
     
     if available_only:
         query += " AND available_copies > 0"
@@ -129,7 +145,6 @@ def get_languages():
 @books_bp.route('/<int:book_id>', methods=['GET'])
 def get_book(book_id):
     """Get single book with reviews"""
-    # Get book details
     result = db.session.execute(
         text("SELECT * FROM vw_book_catalogue WHERE book_id = :book_id"),
         {'book_id': book_id}
@@ -140,7 +155,6 @@ def get_book(book_id):
     
     book = dict(result._mapping)
     
-    # Get reviews for this book with user names
     reviews = db.session.execute(
         text("""
             SELECT r.*, u.full_name, u.profile_picture
@@ -152,7 +166,6 @@ def get_book(book_id):
         {'book_id': book_id}
     ).fetchall()
     
-    # Check if book is in current user's wishlist (if authenticated)
     in_wishlist = False
     try:
         from flask_jwt_extended import verify_jwt_in_request
@@ -191,7 +204,6 @@ def add_review(book_id):
     if not review_text or not review_text.strip():
         return jsonify({'error': 'Review text is required'}), 400
     
-    # Check if book exists
     book = db.session.execute(
         text("SELECT book_id FROM books WHERE book_id = :book_id AND is_archived = FALSE"),
         {'book_id': book_id}
@@ -200,7 +212,6 @@ def add_review(book_id):
     if not book:
         return jsonify({'error': 'Book not found'}), 404
     
-    # Check if user has borrowed this book (must have history to review)
     has_borrowed = db.session.execute(
         text("""
             SELECT 1 FROM borrow_history 
@@ -213,7 +224,6 @@ def add_review(book_id):
     if not has_borrowed:
         return jsonify({'error': 'You can only review books you have borrowed'}), 403
     
-    # Check if user already reviewed this book
     existing = db.session.execute(
         text("SELECT review_id FROM reviews WHERE user_id = :user_id AND book_id = :book_id"),
         {'user_id': user_id, 'book_id': book_id}
@@ -222,7 +232,6 @@ def add_review(book_id):
     if existing:
         return jsonify({'error': 'You have already reviewed this book'}), 409
     
-    # Insert review
     db.session.execute(
         text("""
             INSERT INTO reviews (user_id, book_id, rating, review_text)
@@ -243,7 +252,6 @@ def update_review(book_id, review_id):
     user_id = int(get_jwt_identity())
     data = request.get_json()
     
-    # Check if review belongs to user
     review = db.session.execute(
         text("""
             SELECT review_id FROM reviews 
@@ -261,7 +269,6 @@ def update_review(book_id, review_id):
     if rating and (rating < 1 or rating > 5):
         return jsonify({'error': 'Rating must be between 1 and 5'}), 400
     
-    # Update review
     updates = []
     params = {'review_id': review_id}
     
@@ -308,15 +315,28 @@ def delete_review(book_id, review_id):
 def search_books():
     """Quick search endpoint for autocomplete"""
     q = request.args.get('q', '')
+    search_type = request.args.get('type', 'all')
     
     if len(q) < 2:
         return jsonify([]), 200
     
+    # Build search condition based on type
+    if search_type == 'title':
+        where_clause = "title LIKE :q"
+    elif search_type == 'author':
+        where_clause = "author LIKE :q"
+    elif search_type == 'isbn':
+        where_clause = "isbn LIKE :q"
+    elif search_type == 'genre':
+        where_clause = "genre LIKE :q"
+    else:
+        where_clause = "(title LIKE :q OR author LIKE :q)"
+    
     result = db.session.execute(
-        text("""
+        text(f"""
             SELECT book_id, title, author, cover_image
             FROM books
-            WHERE (title LIKE :q OR author LIKE :q) AND is_archived = FALSE
+            WHERE {where_clause} AND is_archived = FALSE
             LIMIT 10
         """),
         {'q': f'%{q}%'}

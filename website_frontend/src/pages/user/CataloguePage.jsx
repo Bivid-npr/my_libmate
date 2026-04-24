@@ -290,6 +290,7 @@ const CataloguePage = () => {
         
         if (searchQuery) {
           params.search = searchQuery;
+          params.type = searchType;
         }
         
         // Handle multiple genres - send as comma-separated string
