@@ -116,6 +116,15 @@ export const booksAPI = {
     apiRequest(`/books/${bookId}/reviews/${reviewId}`, {
       method: 'DELETE'
     }),
+
+  requestBook: (bookData) => 
+    apiRequest('/books/request', {
+      method: 'POST',
+      body: JSON.stringify(bookData)
+    }),
+
+  getMyRequests: () => 
+      apiRequest('/books/requests'),
 };
 
 // ============ USERS API ============
@@ -322,6 +331,22 @@ export const adminAPI = {
     apiRequest(`/admin/books/${bookId}`, {
       method: 'DELETE'
     }),
+
+  getBookRequests: (status = null) => {
+      let url = '/admin/book-requests';
+      if (status) url += `?status=${status}`;
+      return apiRequest(url);
+    },
+
+  approveBookRequest: (requestId) => 
+      apiRequest(`/admin/book-requests/${requestId}/approve`, {
+        method: 'POST'
+      }),
+
+  rejectBookRequest: (requestId) => 
+      apiRequest(`/admin/book-requests/${requestId}/reject`, {
+        method: 'POST'
+      }),
 };
 
 export default {

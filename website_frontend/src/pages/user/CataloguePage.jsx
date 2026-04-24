@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { FaStar, FaThLarge, FaList, FaArrowLeft, FaArrowRight, FaTimes, FaBook } from 'react-icons/fa';
 import { booksAPI } from '../../services/api';
+import RequestBookModal from '../../components/models/RequestBookModal';
 
 // Language options
 const LANGUAGES = [
@@ -214,6 +215,7 @@ const CataloguePage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalBooks, setTotalBooks] = useState(0);
   const [sortOption, setSortOption] = useState('popular');
+  const [showRequestModal, setShowRequestModal] = useState(false); // ADDED
   
   // Search state from URL
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
@@ -226,7 +228,7 @@ const CataloguePage = () => {
   const [yearFrom, setYearFrom] = useState('');
   const [yearTo, setYearTo] = useState('');
   
-  // Static genres from API (won't disappear when filtering)
+  // Static genres from API
   const [allGenres, setAllGenres] = useState([]);
   
   // Temporary year values for the input fields
@@ -261,14 +263,12 @@ const CataloguePage = () => {
       setSearchType('all');
     }
     
-    // Handle multiple genres from URL (comma-separated)
     if (genre) {
       setSelectedGenres(genre.split(','));
     } else {
       setSelectedGenres([]);
     }
     
-    // Handle multiple languages from URL (comma-separated)
     if (lang) {
       setSelectedLanguages(lang.split(','));
     } else {
@@ -293,12 +293,10 @@ const CataloguePage = () => {
           params.type = searchType;
         }
         
-        // Handle multiple genres - send as comma-separated string
         if (selectedGenres.length > 0) {
           params.genre = selectedGenres.join(',');
         }
         
-        // Handle multiple languages - send as comma-separated string
         if (selectedLanguages.length > 0) {
           params.language = selectedLanguages.join(',');
         }
@@ -314,8 +312,6 @@ const CataloguePage = () => {
           params.year_to = yearTo;
         }
         
-        console.log('Fetching books with params:', params); // Debug log
-        
         const data = await booksAPI.getBooks(params);
         setBooks(data.books || []);
         setTotalPages(data.total_pages || 1);
@@ -329,7 +325,7 @@ const CataloguePage = () => {
     };
     
     fetchBooks();
-  }, [currentPage, selectedGenres, selectedLanguages, availableOnly, yearFrom, yearTo, searchQuery]);
+  }, [currentPage, selectedGenres, selectedLanguages, availableOnly, yearFrom, yearTo, searchQuery, searchType]);
 
   // Update URL when filters change
   useEffect(() => {
@@ -448,7 +444,7 @@ const CataloguePage = () => {
                   {selectedGenres.map(genre => (
                     <span key={genre} className="inline-flex items-center gap-1 px-2 py-1 bg-[#C4895A]/10 text-[#C4895A] text-xs rounded-full">
                       {genre}
-                      <button onClick={() => setSelectedGenres(selectedGenres.filter(g => g !== genre))}>
+                      <button onClick={() => { setSelectedGenres(selectedGenres.filter(g => g !== genre)); setCurrentPage(1); }}>
                         <FaTimes size={10} />
                       </button>
                     </span>
@@ -456,7 +452,7 @@ const CataloguePage = () => {
                   {selectedLanguages.map(lang => (
                     <span key={lang} className="inline-flex items-center gap-1 px-2 py-1 bg-[#C4895A]/10 text-[#C4895A] text-xs rounded-full">
                       {lang}
-                      <button onClick={() => setSelectedLanguages(selectedLanguages.filter(l => l !== lang))}>
+                      <button onClick={() => { setSelectedLanguages(selectedLanguages.filter(l => l !== lang)); setCurrentPage(1); }}>
                         <FaTimes size={10} />
                       </button>
                     </span>
@@ -492,7 +488,7 @@ const CataloguePage = () => {
               </label>
             </div>
 
-            {/* Genre Filter - Checkboxes for multiple selection */}
+            {/* Genre Filter */}
             <div className="filter-block bg-[#F3EDE3] border border-[#EAE0D0] rounded-[12px] p-4 mb-3">
               <div className="filter-block-title text-xs font-bold text-[#2C1F14] uppercase tracking-wide mb-3">
                 Genre
@@ -502,7 +498,7 @@ const CataloguePage = () => {
                   <input 
                     type="checkbox" 
                     checked={selectedGenres.length === 0}
-                    onChange={() => setSelectedGenres([])}
+                    onChange={() => { setSelectedGenres([]); setCurrentPage(1); }}
                     className="accent-[#C4895A]" 
                   />
                   <span className="text-[13px] font-medium text-[#2C1F14]">All Genres</span>
@@ -538,7 +534,7 @@ const CataloguePage = () => {
                   <input 
                     type="checkbox" 
                     checked={selectedLanguages.length === 0}
-                    onChange={() => setSelectedLanguages([])}
+                    onChange={() => { setSelectedLanguages([]); setCurrentPage(1); }}
                     className="accent-[#C4895A]" 
                   />
                   <span className="text-[13px] font-medium text-[#2C1F14]">All Languages</span>
@@ -564,7 +560,7 @@ const CataloguePage = () => {
               </div>
             </div>
 
-            {/* Published Year Filter with Apply button */}
+            {/* Published Year Filter */}
             <div className="filter-block bg-[#F3EDE3] border border-[#EAE0D0] rounded-[12px] p-4 mb-3">
               <div className="filter-block-title text-xs font-bold text-[#2C1F14] uppercase tracking-wide mb-3">
                 Published Year
@@ -644,7 +640,7 @@ const CataloguePage = () => {
             {sortedBooks.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-xl border border-[#EAE0D0]">
                 <FaBook className="text-6xl text-[#C4895A]/30 mx-auto mb-4" />
-                <p className="text-[#9A8478]">No books found matching your criteria.</p>
+                <p className="text-[#9A8478] mb-4">No books found matching your criteria.</p>
                 <button 
                   onClick={clearAllFilters}
                   className="mt-4 px-6 py-2 bg-[#C4895A] text-white rounded-full hover:bg-[#D4A574] transition"
@@ -681,13 +677,22 @@ const CataloguePage = () => {
                 <div className="text-sm font-medium text-[#2C1F14] mb-1">Can't find what you're looking for?</div>
                 <div className="text-xs text-[#9A8478]">Request a book and we'll try to add it to the library.</div>
               </div>
-              <button className="px-4 py-2 text-sm border border-[#EAE0D0] rounded-full hover:border-[#C4895A] hover:text-[#C4895A] transition">
+              <button 
+                onClick={() => setShowRequestModal(true)}
+                className="px-4 py-2 text-sm bg-[#C4895A] text-white rounded-full hover:bg-[#D4A574] transition"
+              >
                 Request a Book
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Request Book Modal */}
+      <RequestBookModal 
+        isOpen={showRequestModal} 
+        onClose={() => setShowRequestModal(false)} 
+      />
     </div>
   );
 };

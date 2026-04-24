@@ -344,3 +344,75 @@ def search_books():
     
     books = [dict(row._mapping) for row in result]
     return jsonify(books), 200
+
+@books_bp.route('/request', methods=['POST'])
+@jwt_required()
+@require_user
+def request_book():
+    """Submit a book purchase request"""
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    title = data.get('title')
+    author = data.get('author', '')
+    genre = data.get('genre', '')
+    reason = data.get('reason', '')
+    
+    if not title:
+        return jsonify({'error': 'Book title is required'}), 400
+    
+    # Check if book already exists
+    existing = db.session.execute(
+        text("SELECT book_id FROM books WHERE title LIKE :title AND is_archived = FALSE LIMIT 1"),
+        {'title': f'%{title}%'}
+    ).first()
+    
+    if existing:
+        return jsonify({'error': 'A similar book already exists in the library'}), 409
+    
+    # Check if user already requested this
+    duplicate = db.session.execute(
+        text("SELECT request_id FROM book_requests WHERE user_id = :user_id AND title LIKE :title AND status = 'pending'"),
+        {'user_id': user_id, 'title': f'%{title}%'}
+    ).first()
+    
+    if duplicate:
+        return jsonify({'error': 'You have already requested this book'}), 409
+    
+    # Insert request
+    db.session.execute(
+        text("""
+            INSERT INTO book_requests (user_id, title, author, genre, reason, status)
+            VALUES (:user_id, :title, :author, :genre, :reason, 'pending')
+        """),
+        {
+            'user_id': user_id,
+            'title': title,
+            'author': author,
+            'genre': genre,
+            'reason': reason
+        }
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Book request submitted successfully! The library will review your request.'}), 201
+
+
+@books_bp.route('/requests', methods=['GET'])
+@jwt_required()
+@require_user
+def get_my_requests():
+    """Get current user's book requests"""
+    user_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("""
+            SELECT * FROM book_requests 
+            WHERE user_id = :user_id 
+            ORDER BY created_at DESC
+        """),
+        {'user_id': user_id}
+    )
+    requests = [dict(row._mapping) for row in result]
+    
+    return jsonify(requests), 200

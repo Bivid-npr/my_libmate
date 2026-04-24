@@ -591,3 +591,63 @@ def get_revenue_stats():
         'monthly_revenue': monthly_stats,
         'total_revenue': float(total)
     }), 200
+
+
+@admin_bp.route('/book-requests', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_book_requests():
+    """Get all book purchase requests"""
+    admin_id = int(get_jwt_identity())
+    filter_status = request.args.get('status')
+    
+    query = """
+        SELECT br.*, u.full_name, u.email
+        FROM book_requests br
+        JOIN users u ON br.user_id = u.user_id
+        WHERE 1=1
+    """
+    params = {}
+    
+    if filter_status and filter_status != 'all':
+        query += " AND br.status = :status"
+        params['status'] = filter_status
+    
+    query += " ORDER BY br.created_at DESC"
+    
+    result = db.session.execute(text(query), params)
+    requests = [dict(row._mapping) for row in result]
+    
+    return jsonify(requests), 200
+
+
+@admin_bp.route('/book-requests/<int:request_id>/approve', methods=['POST'])
+@jwt_required()
+@require_admin
+def approve_book_request(request_id):
+    """Approve a book request"""
+    admin_id = int(get_jwt_identity())
+    
+    db.session.execute(
+        text("UPDATE book_requests SET status = 'approved', updated_at = NOW() WHERE request_id = :request_id"),
+        {'request_id': request_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Book request approved'}), 200
+
+
+@admin_bp.route('/book-requests/<int:request_id>/reject', methods=['POST'])
+@jwt_required()
+@require_admin
+def reject_book_request(request_id):
+    """Reject a book request"""
+    admin_id = int(get_jwt_identity())
+    
+    db.session.execute(
+        text("UPDATE book_requests SET status = 'rejected', updated_at = NOW() WHERE request_id = :request_id"),
+        {'request_id': request_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Book request rejected'}), 200
