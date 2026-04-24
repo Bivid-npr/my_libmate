@@ -146,6 +146,7 @@ const HomePage = () => {
   const [loadingNewArrivals, setLoadingNewArrivals] = useState(true);
   const [genres, setGenres] = useState([]);
   const [genreCounts, setGenreCounts] = useState({});
+  const [loadingGenres, setLoadingGenres] = useState(true);
   
   const trendingScrollRef = useRef(null);
   const newArrivalsScrollRef = useRef(null);
@@ -196,30 +197,39 @@ const HomePage = () => {
     fetchNewArrivals();
   }, []);
 
-  // Fetch genres and their counts
+  // OPTIMIZED: Fetch genres and counts in ONE pass
   useEffect(() => {
-    const fetchGenres = async () => {
+    const fetchGenresWithCounts = async () => {
       try {
-        const genresList = await booksAPI.getGenres();
-        setGenres(genresList);
+        setLoadingGenres(true);
         
+        // Fetch all books with a large per_page to count genres locally
+        const data = await booksAPI.getBooks({ per_page: 500 });
+        const allBooks = data.books || [];
+        
+        // Count books per genre
         const counts = {};
-        for (const genre of genresList) {
-          try {
-            const booksData = await booksAPI.getBooks({ genre, per_page: 1 });
-            counts[genre] = booksData.total || 0;
-          } catch (e) {
-            counts[genre] = 0;
+        const genreSet = new Set();
+        
+        allBooks.forEach(book => {
+          if (book.genre) {
+            genreSet.add(book.genre);
+            counts[book.genre] = (counts[book.genre] || 0) + 1;
           }
-        }
+        });
+        
+        setGenres(Array.from(genreSet));
         setGenreCounts(counts);
       } catch (error) {
         console.error('Error fetching genres:', error);
+        // Fallback
         setGenres(['Fiction', 'Science Fiction', 'Fantasy', 'Mystery', 'Biography', 'History', 'Self-Help', 'Memoir']);
+      } finally {
+        setLoadingGenres(false);
       }
     };
     
-    fetchGenres();
+    fetchGenresWithCounts();
   }, []);
 
   useEffect(() => {
@@ -277,7 +287,7 @@ const HomePage = () => {
     }
   };
 
-  // Genre icons mapping with real React Icons
+  // Genre icons mapping
   const getGenreIcon = (genreName) => {
     const iconMap = {
       'Fiction': <FaBook size={28} />,
@@ -300,21 +310,22 @@ const HomePage = () => {
     return iconMap[genreName] || <FaBook size={28} />;
   };
 
-  // Use genres from API or fallback
-  const displayGenres = genres.length > 0 ? genres.slice(0, 8) : [
-    { name: 'Fiction', count: 142 },
-    { name: 'Science Fiction', count: 98 },
-    { name: 'Fantasy', count: 115 },
-    { name: 'Mystery', count: 76 },
-    { name: 'Biography', count: 54 },
-    { name: 'History', count: 89 },
-    { name: 'Self-Help', count: 63 },
-    { name: 'Memoir', count: 41 },
-  ];
+  const displayGenres = genres.length > 0 
+    ? genres.slice(0, 8).map(name => ({ name, count: genreCounts[name] || 0 }))
+    : [
+        { name: 'Fiction', count: 142 },
+        { name: 'Science Fiction', count: 98 },
+        { name: 'Fantasy', count: 115 },
+        { name: 'Mystery', count: 76 },
+        { name: 'Biography', count: 54 },
+        { name: 'History', count: 89 },
+        { name: 'Self-Help', count: 63 },
+        { name: 'Memoir', count: 41 },
+      ];
 
   return (
     <div className="bg-[#FAF7F2]">
-      {/* Hero Section - Conditional based on auth status */}
+      {/* Hero Section */}
       <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40 pt-[80px] pb-12">
         {isAuthenticated ? (
           <HeroCarousel />
@@ -393,6 +404,7 @@ const HomePage = () => {
         loading={loadingNewArrivals}
       />
 
+      {/* Browse by Genre - Optimized */}
       <div className="section py-[20px] reveal opacity-0 translate-y-5 transition-[opacity_transform] duration-600">
         <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
           <div className="section-header flex justify-between items-end mb-7">
@@ -401,30 +413,37 @@ const HomePage = () => {
               <div className="section-sub text-[13px] text-[#9A8478] mt-1">Find exactly what you're looking for</div>
             </div>
           </div>
-          <div className="genre-grid grid grid-cols-2 md:grid-cols-4 gap-3.5">
-            {displayGenres.map((genre) => {
-              const genreName = typeof genre === 'string' ? genre : genre.name;
-              const genreCount = typeof genre === 'string' ? (genreCounts[genreName] || 0) : genre.count;
-              
-              return (
+          {loadingGenres ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+              {[1,2,3,4,5,6,7,8].map(i => (
+                <div key={i} className="p-6 rounded-[12px] border border-[#EAE0D0] bg-[#F3EDE3] animate-pulse">
+                  <div className="h-8 bg-[#EAE0D0] rounded w-8 mx-auto mb-2.5"></div>
+                  <div className="h-4 bg-[#EAE0D0] rounded w-24 mx-auto mb-1"></div>
+                  <div className="h-3 bg-[#EAE0D0] rounded w-16 mx-auto"></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="genre-grid grid grid-cols-2 md:grid-cols-4 gap-3.5">
+              {displayGenres.map((genre) => (
                 <Link
-                  key={genreName}
-                  to={`/catalogue?genre=${encodeURIComponent(genreName)}`}
+                  key={genre.name}
+                  to={`/catalogue?genre=${encodeURIComponent(genre.name)}`}
                   className="genre-card p-6 rounded-[12px] border border-[#EAE0D0] bg-[#F3EDE3] cursor-pointer transition-all duration-200 hover:border-[#D4A574] hover:-translate-y-0.5 hover:shadow-md text-center"
                 >
                   <div className="genre-icon text-[#C4895A] flex justify-center mb-2.5">
-                    {getGenreIcon(genreName)}
+                    {getGenreIcon(genre.name)}
                   </div>
-                  <div className="genre-name font-serif text-[15px] font-semibold text-[#2C1F14] mb-0.5">{genreName}</div>
-                  <div className="genre-count text-xs text-[#9A8478]">{genreCount} books</div>
+                  <div className="genre-name font-serif text-[15px] font-semibold text-[#2C1F14] mb-0.5">{genre.name}</div>
+                  <div className="genre-count text-xs text-[#9A8478]">{genre.count} books</div>
                 </Link>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Membership Banner */}
+      {/* Membership Banner - Updated with 12-month + links to profile */}
       <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
         <div className="memb-banner p-8 md:p-12 lg:p-14 bg-[#2C1F14] rounded-2xl grid grid-cols-1 md:grid-cols-[1fr_auto] items-center gap-8 md:gap-10 relative overflow-hidden mb-16 md:mb-20">
           <div className="absolute top-[-80px] right-[160px] w-[300px] h-[300px] rounded-full bg-[#C4895A] opacity-5"></div>
@@ -437,17 +456,22 @@ const HomePage = () => {
               Reserve books, track your reading, and get AI-powered personalised recommendations based on your reading history — all with a SmartLib membership.
             </div>
           </div>
-          <div className="plan-cards flex flex-col gap-3 z-10">
-            <div className="plan-card px-6 py-[18px] bg-[#FAF7F2]/10 border border-[#FAF7F2]/20 rounded-xl cursor-pointer transition-all duration-200 hover:bg-[#FAF7F2]/20 text-center min-w-[140px] md:min-w-[170px]" onClick={() => window.location.href = '/register'}>
+          <div className="plan-cards flex flex-wrap gap-3 z-10">
+            <Link to="/profile" className="plan-card px-5 py-[18px] bg-[#FAF7F2]/10 border border-[#FAF7F2]/20 rounded-xl cursor-pointer transition-all duration-200 hover:bg-[#FAF7F2]/20 text-center min-w-[120px] flex-1">
               <div className="plan-dur text-xs text-[#FAF7F2]/55 mb-1">3 Months</div>
-              <div className="plan-price font-serif text-xl md:text-2xl font-bold text-[#FAF7F2]">NPR 200</div>
+              <div className="plan-price font-serif text-xl md:text-2xl font-bold text-[#FAF7F2]">NPR 300</div>
               <span className="plan-cta inline-block mt-1.5 text-[11px] text-[#FAF7F2]/60">Get started →</span>
-            </div>
-            <div className="plan-card px-6 py-[18px] bg-[#C4895A] border border-[#C4895A] rounded-xl cursor-pointer transition-all duration-200 text-center min-w-[140px] md:min-w-[170px]" onClick={() => window.location.href = '/register'}>
-              <div className="plan-dur text-xs text-white/80 mb-1">6 Months · Best value</div>
+            </Link>
+            <Link to="/profile" className="plan-card px-5 py-[18px] bg-[#FAF7F2]/10 border border-[#FAF7F2]/20 rounded-xl cursor-pointer transition-all duration-200 hover:bg-[#FAF7F2]/20 text-center min-w-[120px] flex-1">
+              <div className="plan-dur text-xs text-[#FAF7F2]/55 mb-1">6 Months · Popular</div>
               <div className="plan-price font-serif text-xl md:text-2xl font-bold text-[#FAF7F2]">NPR 500</div>
-              <span className="plan-cta inline-block mt-1.5 text-[11px] text-white/80">Get started →</span>
-            </div>
+              <span className="plan-cta inline-block mt-1.5 text-[11px] text-[#FAF7F2]/60">Get started →</span>
+            </Link>
+            <Link to="/profile" className="plan-card px-5 py-[18px] bg-[#C4895A] border border-[#C4895A] rounded-xl cursor-pointer transition-all duration-200 text-center min-w-[120px] flex-1">
+              <div className="plan-dur text-xs text-white/80 mb-1">12 Months · Best Value</div>
+              <div className="plan-price font-serif text-xl md:text-2xl font-bold text-[#FAF7F2]">NPR 900</div>
+              <span className="plan-cta inline-block mt-1.5 text-[11px] text-white/80">Save 25% →</span>
+            </Link>
           </div>
         </div>
       </div>
@@ -457,13 +481,8 @@ const HomePage = () => {
         <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
           <div className="footer-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12 mb-9">
             <div>
-              {/* Logo Section - Updated with actual logo */}
               <Link to="/" className="nav-logo flex items-center gap-2.5 mb-3.5">
-                <img 
-                  src={logoNav} 
-                  alt="LibMate Logo" 
-                  className="h-12 w-auto"
-                />
+                <img src={logoNav} alt="LibMate Logo" className="h-12 w-auto" />
               </Link>
               <p className="footer-desc text-[13.5px] text-[#9A8478] leading-relaxed my-3.5 mb-[18px]">
                 A smart, modern library management system bringing books and readers together with AI and IoT technology.
@@ -474,7 +493,6 @@ const HomePage = () => {
                 <strong className="text-[#4A3728]">Address:</strong> Kathmandu, Nepal
               </div>
             </div>
-            {/* Rest of the footer columns remain the same */}
             <div>
               <div className="footer-col-title font-serif text-[14px] font-bold text-[#2C1F14] mb-3.5">Explore</div>
               <ul className="footer-links space-y-2">

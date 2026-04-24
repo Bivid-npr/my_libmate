@@ -291,9 +291,9 @@ def change_password():
     if not result:
         return jsonify({'error': 'User not found'}), 404
     
-    # Verify old password
+    # Verify old password - return 400 instead of 401
     if not bcrypt.checkpw(old_password.encode('utf-8'), result[0].encode('utf-8')):
-        return jsonify({'error': 'Invalid current password'}), 401
+        return jsonify({'error': 'Invalid current password'}), 400  # ← Changed from 401 to 400
     
     # Hash new password
     new_hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())

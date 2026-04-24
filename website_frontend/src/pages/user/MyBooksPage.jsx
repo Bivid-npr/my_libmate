@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FaClock, FaStar, FaBook, FaHeart, FaCalendarAlt, FaUndo, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
+import { FaClock, FaStar, FaBook, FaHeart, FaCalendarAlt, FaUndo, FaTrash, FaExclamationTriangle, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import { usersAPI, borrowingsAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
@@ -81,18 +81,6 @@ const MyBooksPage = () => {
     }
   };
 
-  const handleReturnBook = async (borrowId) => {
-    if (!window.confirm('Confirm return of this book?')) return;
-    
-    try {
-      await borrowingsAPI.returnBook(borrowId);
-      showToast('Book returned successfully', 'success');
-      fetchAllData();
-    } catch (error) {
-      showToast(error.message || 'Failed to return book', 'error');
-    }
-  };
-
   const calculateDaysLeft = (dueDate) => {
     const due = new Date(dueDate);
     const today = new Date();
@@ -159,7 +147,7 @@ const MyBooksPage = () => {
           ))}
         </div>
 
-        {/* Currently Borrowing Tab - List Card Style */}
+        {/* Currently Borrowing Tab */}
         {activeTab === 'borrowing' && (
           <div className="space-y-3">
             {borrowings.length === 0 ? (
@@ -181,6 +169,11 @@ const MyBooksPage = () => {
                 {borrowings.map((book) => {
                   const daysLeft = calculateDaysLeft(book.due_date);
                   const isOverdue = daysLeft < 0;
+                  const canRenew = !isOverdue && book.renewal_count < 2;
+                  const renewalPending = book.renewal_status === 'pending';
+                  const renewalApproved = book.renewal_status === 'approved';
+                  const renewalRejected = book.renewal_status === 'rejected';
+                  const maxRenewals = book.renewal_count >= 2;
                   
                   return (
                     <div key={book.borrow_id} className="bg-white rounded-xl p-5 shadow-sm border border-[#EAE0D0] hover:shadow-md transition-shadow">
@@ -210,43 +203,111 @@ const MyBooksPage = () => {
                             </div>
                             
                             {book.current_fine > 0 && (
-                              <span className="text-sm text-red-500">
+                              <span className="text-sm text-red-500 font-medium">
                                 Fine: NPR {parseFloat(book.current_fine).toFixed(2)}
                               </span>
                             )}
                             
-                            {book.renewal_requested && (
-                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
+                            {book.renewal_count > 0 && (
+                              <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
+                                Renewed {book.renewal_count}x
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Status Badges */}
+                          <div className="flex flex-wrap items-center gap-2 mt-3">
+                            {isOverdue && (
+                              <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full flex items-center gap-1">
+                                <FaExclamationTriangle size={10} />
+                                Overdue — Return to library
+                              </span>
+                            )}
+                            
+                            {renewalPending && (
+                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full flex items-center gap-1">
+                                <FaUndo size={10} />
                                 Renewal Pending
                               </span>
                             )}
                             
-                            {isOverdue && (
+                            {renewalApproved && (
+                              <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                                <FaCheckCircle size={10} />
+                                Renewal Approved
+                              </span>
+                            )}
+                            
+                            {renewalRejected && (
                               <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full flex items-center gap-1">
-                                <FaExclamationTriangle size={10} />
-                                Overdue
+                                <FaTimesCircle size={10} />
+                                Renewal Rejected
+                              </span>
+                            )}
+                            
+                            {maxRenewals && !isOverdue && (
+                              <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded-full">
+                                Max Renewals Used
                               </span>
                             )}
                           </div>
                         </div>
                         
-                        {/* Actions */}
-                        <div className="flex sm:flex-col gap-2 sm:w-[140px] flex-shrink-0">
-                          {!book.renewal_requested && daysLeft <= 3 && daysLeft > 0 && (
+                        {/* Actions - Renewal Only */}
+                        <div className="flex sm:flex-col gap-2 sm:w-[155px] flex-shrink-0">
+                          {/* Eligible for renewal */}
+                          {canRenew && !renewalPending && daysLeft <= 3 && daysLeft > 0 && (
                             <button 
                               onClick={() => handleRenewalRequest(book.borrow_id)}
-                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm border border-[#EAE0D0] rounded-lg hover:border-[#C4895A] hover:text-[#C4895A] transition whitespace-nowrap"
+                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition whitespace-nowrap"
+                              title="Request 14-day extension"
                             >
                               <FaUndo size={12} />
-                              Renew
+                              Request Renewal
                             </button>
                           )}
-                          <button 
-                            onClick={() => handleReturnBook(book.borrow_id)}
-                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition whitespace-nowrap"
-                          >
-                            Return
-                          </button>
+                          
+                          {/* Too early to renew */}
+                          {canRenew && !renewalPending && daysLeft > 3 && (
+                            <div className="text-xs text-[#9A8478] text-center py-2 bg-[#F3EDE3] rounded-lg">
+                              Renewal opens in {daysLeft - 3} day{daysLeft - 3 !== 1 ? 's' : ''}
+                            </div>
+                          )}
+                          
+                          {/* Pending */}
+                          {renewalPending && (
+                            <div className="text-xs text-blue-600 text-center py-2 bg-blue-50 rounded-lg">
+                              Awaiting admin approval...
+                            </div>
+                          )}
+                          
+                          {/* Approved */}
+                          {renewalApproved && (
+                            <div className="text-xs text-green-600 text-center py-2 bg-green-50 rounded-lg">
+                              ✓ Due date extended!
+                            </div>
+                          )}
+                          
+                          {/* Rejected */}
+                          {renewalRejected && (
+                            <div className="text-xs text-red-600 text-center py-2 bg-red-50 rounded-lg">
+                              Please return by due date
+                            </div>
+                          )}
+                          
+                          {/* Max renewals */}
+                          {maxRenewals && !isOverdue && (
+                            <div className="text-xs text-gray-500 text-center py-2">
+                              No renewals remaining
+                            </div>
+                          )}
+                          
+                          {/* Overdue */}
+                          {isOverdue && (
+                            <div className="text-xs text-red-600 text-center py-2 bg-red-50 rounded-lg font-medium">
+                              Return immediately
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -257,7 +318,7 @@ const MyBooksPage = () => {
           </div>
         )}
 
-        {/* Reservations Tab - List Card Style */}
+        {/* Reservations Tab */}
         {activeTab === 'reservations' && (
           <div className="space-y-3">
             {reservations.length === 0 ? (
@@ -272,14 +333,12 @@ const MyBooksPage = () => {
               reservations.map((book) => (
                 <div key={book.reservation_id} className="bg-white rounded-xl p-5 shadow-sm border border-[#EAE0D0] hover:shadow-md transition-shadow">
                   <div className="flex flex-col sm:flex-row gap-4">
-                    {/* Book Cover */}
                     <Link to={`/book/${book.book_id}`} className="sm:w-[80px] flex-shrink-0">
                       <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2">
                         <span className="text-white text-[10px] font-serif font-semibold line-clamp-2">{book.title}</span>
                       </div>
                     </Link>
                     
-                    {/* Book Info */}
                     <div className="flex-1 min-w-0">
                       <Link to={`/book/${book.book_id}`} className="font-serif text-lg font-bold text-[#2C1F14] hover:text-[#C4895A] transition">
                         {book.title}
@@ -294,15 +353,9 @@ const MyBooksPage = () => {
                         <span className="text-sm text-[#9A8478]">
                           Expires: {formatDate(book.expires_at)}
                         </span>
-                        {book.position && (
-                          <span className="text-xs px-2 py-1 bg-[#EAE0D0] text-[#6B4F40] rounded-full">
-                            Queue Position: #{book.position}
-                          </span>
-                        )}
                       </div>
                     </div>
                     
-                    {/* Actions */}
                     <div className="sm:w-[140px] flex-shrink-0">
                       <button 
                         onClick={() => handleCancelReservation(book.reservation_id)}
@@ -318,7 +371,7 @@ const MyBooksPage = () => {
           </div>
         )}
 
-        {/* Wishlist Tab - Grid Card Style (matching catalogue grid) */}
+        {/* Wishlist Tab */}
         {activeTab === 'wishlist' && (
           <div>
             {wishlist.length === 0 ? (
@@ -333,7 +386,6 @@ const MyBooksPage = () => {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
                 {wishlist.map((book) => (
                   <div key={book.book_id} className="group">
-                    {/* Book Card - Matching CataloguePage BookGridCard */}
                     <Link to={`/book/${book.book_id}`} className="block">
                       <div className="book-cover w-full h-[230px] rounded-[12px] flex items-end p-3 relative overflow-hidden shadow-md transition-transform duration-250 hover:-translate-y-1.5 hover:shadow-xl bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
                         <div className="absolute top-0 left-0 right-0 h-[40%] bg-gradient-to-b from-white/15 to-transparent rounded-t-[12px]"></div>
@@ -384,7 +436,7 @@ const MyBooksPage = () => {
           </div>
         )}
 
-        {/* Borrow History Tab - Table Style (clean and professional) */}
+        {/* Borrow History Tab */}
         {activeTab === 'history' && (
           <div>
             {history.length === 0 ? (

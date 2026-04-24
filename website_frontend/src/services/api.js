@@ -37,15 +37,16 @@ const apiRequest = async (endpoint, options = {}) => {
     
     // Handle 401 Unauthorized
     if (response.status === 401) {
-      // Only redirect for non-auth endpoints (actual session expiration)
-      if (!isAuthEndpoint(endpoint)) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-        throw new Error('Session expired. Please login again.');
+      // Auth endpoints (login, register, change-password) - just throw the error
+      if (isAuthEndpoint(endpoint)) {
+        throw new Error(data.error || 'Invalid credentials');
       }
-      // For auth endpoints (login/register), just throw the error message
-      throw new Error(data.error || 'Invalid credentials');
+      
+      // Protected endpoints - token expired or invalid
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+      throw new Error('Session expired. Please login again.');
     }
     
     if (!response.ok) {
@@ -54,7 +55,10 @@ const apiRequest = async (endpoint, options = {}) => {
     
     return data;
   } catch (error) {
-    console.error('API Error:', error);
+    // Don't log auth endpoint errors as they're expected
+    if (!isAuthEndpoint(endpoint)) {
+      console.error('API Error:', error);
+    }
     throw error;
   }
 };

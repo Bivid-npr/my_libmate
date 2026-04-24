@@ -704,7 +704,7 @@ const ProfilePage = () => {
                         }`}
                       >
                         <div className="font-semibold">3 Months</div>
-                        <div className="text-sm">NPR 200</div>
+                        <div className="text-sm">NPR 300</div>
                       </button>
                       <button
                         type="button"
@@ -716,10 +716,8 @@ const ProfilePage = () => {
                         }`}
                       >
                         <div className="font-semibold">6 Months</div>
-                        <div className="text-sm">NPR 500 <span className="text-xs text-green-600">(Best value)</span></div>
+                        <div className="text-sm">NPR 500 <span className="text-xs text-green-600">(Popular)</span></div>
                       </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-3 mt-3">
                       <button
                         type="button"
                         onClick={() => setMembershipData({ ...membershipData, duration: '12' })}
@@ -730,7 +728,7 @@ const ProfilePage = () => {
                         }`}
                       >
                         <div className="font-semibold">12 Months</div>
-                        <div className="text-sm">NPR 900</div>
+                        <div className="text-sm">NPR 900 <span className="text-xs text-green-600">(Best Value)</span></div>
                       </button>
                     </div>
                   </div>
