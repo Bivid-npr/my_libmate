@@ -37,6 +37,20 @@ import AdminSmokeAlertsPage from './pages/admin/SmokeAtertPage';
 import AdminNotificationsPage from './pages/admin/NotificationsPage';
 import AdminSettingsPage from './pages/admin/SettingsPage';
 
+// Redirect admin away from user pages
+const AdminRedirect = ({ children }) => {
+  const { user, isAuthenticated, loading } = useAuth();
+  
+  if (loading) return null;
+  
+  // If admin tries to access user pages, redirect to admin dashboard
+  if (isAuthenticated && user?.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+  
+  return children;
+};
+
 // Protected Route Component for Member Routes
 const ProtectedMemberRoute = ({ children }) => {
   const { isAuthenticated, user, loading } = useAuth();
@@ -89,8 +103,12 @@ function AppContent() {
 
   return (
     <Routes>
-      {/* Public routes - accessible to everyone */}
-      <Route path="/" element={<Layout />}>
+      {/* Public routes - admin gets redirected away */}
+      <Route path="/" element={
+        <AdminRedirect>
+          <Layout />
+        </AdminRedirect>
+      }>
         <Route index element={<HomePage />} />
         <Route path="catalogue" element={<CataloguePage />} />
         <Route path="trending" element={<TrendingPage />} />
@@ -98,31 +116,27 @@ function AppContent() {
         <Route path="book/:id" element={<BookDetailPage />} />
       </Route>
 
-      {/* Member routes - requires authentication, NOT admin */}
-      <Route path="/" element={<MemberLayout />}>
+      {/* Member routes - admin gets redirected away */}
+      <Route path="/" element={
+        <AdminRedirect>
+          <MemberLayout />
+        </AdminRedirect>
+      }>
         <Route path="my-books" element={
-          <ProtectedMemberRoute>
-            <MyBooksPage />
-          </ProtectedMemberRoute>
+          <ProtectedMemberRoute><MyBooksPage /></ProtectedMemberRoute>
         } />
         <Route path="wishlist" element={
-          <ProtectedMemberRoute>
-            <WishlistPage />
-          </ProtectedMemberRoute>
+          <ProtectedMemberRoute><WishlistPage /></ProtectedMemberRoute>
         } />
         <Route path="notifications" element={
-          <ProtectedMemberRoute>
-            <NotificationsPage />
-          </ProtectedMemberRoute>
+          <ProtectedMemberRoute><NotificationsPage /></ProtectedMemberRoute>
         } />
         <Route path="profile" element={
-          <ProtectedMemberRoute>
-            <ProfilePage />
-          </ProtectedMemberRoute>
+          <ProtectedMemberRoute><ProfilePage /></ProtectedMemberRoute>
         } />
       </Route>
 
-      {/* Auth routes - no navbar, redirect if already logged in */}
+      {/* Auth routes */}
       <Route path="/" element={<AuthLayout />}>
         <Route path="login" element={
           isAuthenticated ? (
@@ -140,7 +154,7 @@ function AppContent() {
         } />
       </Route>
 
-      {/* Admin Routes - separate layout, requires admin */}
+      {/* Admin Routes */}
       <Route path="/admin" element={
         <ProtectedAdminRoute>
           <AdminLayout />
@@ -156,29 +170,30 @@ function AppContent() {
         <Route path="notifications" element={<AdminNotificationsPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
         
-        {/* Admin 404 - stays within AdminLayout */}
         <Route path="*" element={
           <div className="text-center py-12">
             <h2 className="font-serif text-2xl font-bold text-[#2C1F14] mb-2">Page Not Found</h2>
             <p className="text-[#9A8478] mb-6">This admin page doesn't exist.</p>
-            <Link to="/admin" className="text-[#C4895A] hover:underline">
-              Return to Dashboard
-            </Link>
+            <Link to="/admin" className="text-[#C4895A] hover:underline">Return to Dashboard</Link>
           </div>
         } />
       </Route>
 
-      {/* Catch all - 404 for non-admin routes */}
+      {/* Catch all 404 */}
       <Route path="*" element={
-        <Layout>
-          <div className="min-h-screen flex items-center justify-center bg-[#FAF7F2]">
-            <div className="text-center">
-              <h1 className="font-serif text-4xl font-bold text-[#2C1F14] mb-4">404</h1>
-              <p className="text-[#9A8478] mb-6">Page not found</p>
-              <Link to="/" className="text-[#C4895A] hover:underline">Return Home</Link>
+        isAdmin ? (
+          <Navigate to="/admin" replace />
+        ) : (
+          <Layout>
+            <div className="min-h-screen flex items-center justify-center bg-[#FAF7F2]">
+              <div className="text-center">
+                <h1 className="font-serif text-4xl font-bold text-[#2C1F14] mb-4">404</h1>
+                <p className="text-[#9A8478] mb-6">Page not found</p>
+                <Link to="/" className="text-[#C4895A] hover:underline">Return Home</Link>
+              </div>
             </div>
-          </div>
-        </Layout>
+          </Layout>
+        )
       } />
     </Routes>
   );

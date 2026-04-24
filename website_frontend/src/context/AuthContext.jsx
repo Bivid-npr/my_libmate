@@ -1,62 +1,77 @@
-// src/context/AuthContext.jsx
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { authAPI, usersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
-
 export const useAuth = () => useContext(AuthContext);
+
+const STORAGE_KEYS = ['token', 'user', 'rememberMe'];
+
+const clearStorages = () => {
+  STORAGE_KEYS.forEach(key => {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  });
+};
+
+const getStoredValue = (key) => localStorage.getItem(key) || sessionStorage.getItem(key);
+
+const setStoredValue = (key, value, persistent) => {
+  const storage = persistent ? localStorage : sessionStorage;
+  storage.setItem(key, value);
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     const initAuth = async () => {
-      const token = localStorage.getItem('token');
-      const storedUser = localStorage.getItem('user');
+      const token = getStoredValue('token');
+      const storedUser = getStoredValue('user');
+      const shouldRemember = localStorage.getItem('rememberMe') === 'true';
       
       if (token && storedUser) {
-        // INSTANT LOAD - Use cached user immediately
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
         setIsAuthenticated(true);
-        setLoading(false); // <-- UI shows instantly, no delay
+        setRememberMe(shouldRemember);
         setLoading(false);
         
-        // Background validation - silently check if token is still valid
         try {
           const response = await authAPI.getCurrentUser();
-          // Only update if something changed (e.g., role updated)
           if (JSON.stringify(response.user) !== JSON.stringify(parsedUser)) {
             setUser(response.user);
-            localStorage.setItem('user', JSON.stringify(response.user));
+            setStoredValue('user', JSON.stringify(response.user), shouldRemember);
           }
         } catch (error) {
-          // Token invalid - logout silently
-          console.error('Token validation failed:', error);
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setUser(null);
-          setIsAuthenticated(false);
+          if (error.message?.includes('Session expired') || error.message?.includes('401')) {
+            clearStorages();
+            setUser(null);
+            setIsAuthenticated(false);
+            setRememberMe(false);
+          }
         }
       } else {
         setLoading(false);
       }
     };
-    
     initAuth();
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, shouldRemember = false) => {
     try {
-      const data = await authAPI.login(email, password);
+      const data = await authAPI.login(email, password, shouldRemember);
       
       setUser(data.user);
       setIsAuthenticated(true);
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      setRememberMe(shouldRemember);
+      
+      setStoredValue('token', data.token, shouldRemember);
+      setStoredValue('user', JSON.stringify(data.user), shouldRemember);
+      localStorage.setItem('rememberMe', shouldRemember.toString());
       
       toast.success(`Welcome back, ${data.user.full_name}!`);
       return { success: true, data };
@@ -69,13 +84,11 @@ export const AuthProvider = ({ children }) => {
   const register = useCallback(async (userData) => {
     try {
       const data = await authAPI.register(userData);
-      
       setUser(data.user);
       setIsAuthenticated(true);
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      
-      toast.success('Registration successful! Welcome to LibMate!');
+      toast.success('Registration successful!');
       return { success: true, data };
     } catch (error) {
       toast.error(error.message || 'Registration failed');
@@ -86,8 +99,8 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(() => {
     setUser(null);
     setIsAuthenticated(false);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    setRememberMe(false);
+    clearStorages();
     toast.success('Logged out successfully');
   }, []);
 
@@ -96,29 +109,22 @@ export const AuthProvider = ({ children }) => {
       await usersAPI.updateProfile(profileData);
       const response = await authAPI.getCurrentUser();
       setUser(response.user);
-      localStorage.setItem('user', JSON.stringify(response.user));
+      setStoredValue('user', JSON.stringify(response.user), rememberMe);
       toast.success('Profile updated successfully');
       return { success: true };
     } catch (error) {
       toast.error(error.message || 'Failed to update profile');
       return { success: false, error: error.message };
     }
-  }, []);
-
-  const value = {
-    user,
-    loading,
-    login,
-    register,
-    logout,
-    updateProfile,
-    isAuthenticated,
-    isAdmin: user?.role === 'admin',
-    isMember: user?.role === 'member',
-  };
+  }, [rememberMe]);
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user, loading, login, register, logout, updateProfile,
+      isAuthenticated, rememberMe,
+      isAdmin: user?.role === 'admin',
+      isMember: user?.role === 'member',
+    }}>
       {children}
     </AuthContext.Provider>
   );

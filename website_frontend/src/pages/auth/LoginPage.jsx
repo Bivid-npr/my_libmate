@@ -1,5 +1,5 @@
 // src/pages/auth/LoginPage.jsx
-import React, { useState, useEffect } from "react";  // Added useEffect here
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";  
 import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaQuoteLeft } from "react-icons/fa";
@@ -11,19 +11,9 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, isAuthenticated, user } = useAuth();
+  const [rememberMe, setRememberMe] = useState(false);
+  const { login } = useAuth();
   const navigate = useNavigate();
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (isAuthenticated) {
-      if (user?.role === 'admin' || user?.email?.includes('libmate.edu')) {
-        navigate('/admin');
-      } else {
-        navigate('/');
-      }
-    }
-  }, [isAuthenticated, user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,9 +21,14 @@ const LoginPage = () => {
     setError('');
     
     try {
-      const result = await login(email, password);
+      const result = await login(email, password, rememberMe);
       if (result.success) {
-        console.log('Login successful');
+        // Redirect based on role from the response data
+        if (result.data.is_admin) {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
       } else {
         setError(result.error || 'Invalid email or password');
       }
@@ -47,19 +42,14 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left Side - Decorative with Logo - Lighter background */}
+      {/* Left Side - Decorative with Logo */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#F5F5F5] to-[#EBEBEB] relative overflow-hidden">
         <div className="absolute inset-0 bg-white/10"></div>
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#C4895A]/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-[#D4A574]/20 rounded-full blur-3xl"></div>
         <div className="relative z-10 flex flex-col justify-between h-full p-12">
-          {/* Logo Section */}
           <div className="flex justify-center mt-8">
-            <img 
-              src={logoMain} 
-              alt="LibMate Logo" 
-              className="h-40 w-auto drop-shadow-xl"
-            />
+            <img src={logoMain} alt="LibMate Logo" className="h-40 w-auto drop-shadow-xl" />
           </div>
           <div className="space-y-6">
             <FaQuoteLeft className="text-[#C4895A] text-3xl opacity-80" />
@@ -70,11 +60,8 @@ const LoginPage = () => {
           </div>
           <div className="flex gap-2 justify-start">
             {['#C4895A', '#D4A574', '#E8C4A0', '#F5E1C0', '#FAF0E0', '#FFF8F0'].map((color, i) => (
-              <div
-                key={i}
-                className="w-8 rounded-sm opacity-60 hover:opacity-100 transition-opacity"
-                style={{ backgroundColor: color, height: `${60 + i * 10}px` }}
-              ></div>
+              <div key={i} className="w-8 rounded-sm opacity-60 hover:opacity-100 transition-opacity"
+                style={{ backgroundColor: color, height: `${60 + i * 10}px` }}></div>
             ))}
           </div>
         </div>
@@ -84,13 +71,8 @@ const LoginPage = () => {
       <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-[#FAF7F2] to-[#F3EDE3] p-8">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            {/* Mobile Logo */}
             <div className="lg:hidden flex justify-center mb-4">
-              <img 
-                src={logoMain} 
-                alt="LibMate Logo" 
-                className="h-20 w-auto"
-              />
+              <img src={logoMain} alt="LibMate Logo" className="h-20 w-auto" />
             </div>
             <h2 className="font-serif text-3xl font-bold text-[#2C1F14]">Welcome back</h2>
             <p className="mt-2 text-sm text-[#9A8478]">Log in to access your library account</p>
@@ -104,21 +86,14 @@ const LoginPage = () => {
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-[#4A3728] mb-2">
-                Email address
-              </label>
+              <label htmlFor="email" className="block text-sm font-medium text-[#4A3728] mb-2">Email address</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FaEnvelope className="h-5 w-5 text-[#9A8478]" />
                 </div>
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="email" name="email" type="email" autoComplete="email" required
+                  value={email} onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-10 pr-3 py-3 border border-[#EAE0D0] rounded-xl bg-white placeholder-[#9A8478] text-[#2C1F14] focus:outline-none focus:ring-2 focus:ring-[#C4895A] focus:border-transparent transition-all"
                   placeholder="you@example.com"
                 />
@@ -126,29 +101,20 @@ const LoginPage = () => {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-[#4A3728] mb-2">
-                Password
-              </label>
+              <label htmlFor="password" className="block text-sm font-medium text-[#4A3728] mb-2">Password</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <FaLock className="h-5 w-5 text-[#9A8478]" />
                 </div>
                 <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="password" name="password" type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password" required
+                  value={password} onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-10 pr-10 py-3 border border-[#EAE0D0] rounded-xl bg-white placeholder-[#9A8478] text-[#2C1F14] focus:outline-none focus:ring-2 focus:ring-[#C4895A] focus:border-transparent transition-all"
                   placeholder="Enter your password"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#9A8478] hover:text-[#C4895A] transition-colors"
-                >
+                <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#9A8478] hover:text-[#C4895A] transition-colors">
                   {showPassword ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
                 </button>
               </div>
@@ -157,10 +123,9 @@ const LoginPage = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center">
                 <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-[#C4895A] focus:ring-[#C4895A] border-[#EAE0D0] rounded"
+                  id="remember-me" name="remember-me" type="checkbox"
+                  checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-[#C4895A] focus:ring-[#C4895A] border-[#EAE0D0] rounded accent-[#C4895A]"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-[#9A8478]">
                   Remember me
@@ -173,11 +138,8 @@ const LoginPage = () => {
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2C1F14] hover:bg-[#4A3728] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C4895A] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <button type="submit" disabled={loading}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#2C1F14] hover:bg-[#4A3728] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C4895A] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
               {loading ? 'Logging in...' : 'Log in'}
             </button>
           </form>
