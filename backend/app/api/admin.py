@@ -4,6 +4,7 @@ from sqlalchemy import text
 from datetime import datetime, timedelta, date  
 from ..extensions import db
 from ..utils.auth_utils import require_admin
+import os
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -80,74 +81,127 @@ def admin_dashboard():
 @jwt_required()
 @require_admin
 def add_book():
-    """Add a new book"""
-    data = request.get_json()
+    """Add a new book with cover image"""
     admin_id = int(get_jwt_identity())
     
-    # Validate required fields
-    if not data.get('title') or not data.get('author'):
+    title = request.form.get('title')
+    author = request.form.get('author')
+    
+    if not title or not author:
         return jsonify({'error': 'Title and author are required'}), 400
     
-    # Insert book
-    result = db.session.execute(
+    # Validate year
+    published_year = request.form.get('published_year')
+    if published_year:
+        try:
+            year_int = int(published_year)
+            if year_int < 1000 or year_int > 2155:
+                return jsonify({'error': 'Published year must be between 1000 and 2155'}), 400
+        except ValueError:
+            published_year = None
+    
+    # Handle cover image
+    cover_filename = None
+    if 'cover_image' in request.files:
+        file = request.files['cover_image']
+        if file.filename:
+            ext = file.filename.rsplit('.', 1)[1].lower()
+            if ext in ['jpg', 'jpeg', 'png', 'webp']:
+                cover_filename = f"cover_{int(datetime.now().timestamp())}.{ext}"
+                upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
+                os.makedirs(upload_folder, exist_ok=True)
+                file.save(os.path.join(upload_folder, cover_filename))
+    
+    db.session.execute(
         text("""
-            INSERT INTO books (title, author, isbn, genre, publisher, published_year, 
-                             language, total_copies, available_copies, description, added_by)
-            VALUES (:title, :author, :isbn, :genre, :publisher, :published_year,
-                    :language, :total_copies, :total_copies, :description, :added_by)
+            INSERT INTO books (title, author, isbn, genre, publisher, published_year, language, total_copies, available_copies, description, cover_image, added_by)
+            VALUES (:title, :author, :isbn, :genre, :publisher, :year, :lang, :copies, :copies, :desc, :cover, :aid)
         """),
         {
-            'title': data['title'],
-            'author': data['author'],
-            'isbn': data.get('isbn'),
-            'genre': data.get('genre'),
-            'publisher': data.get('publisher'),
-            'published_year': data.get('published_year'),
-            'language': data.get('language', 'English'),
-            'total_copies': data.get('total_copies', 1),
-            'description': data.get('description'),
-            'added_by': admin_id
+            'title': title, 'author': author,
+            'isbn': request.form.get('isbn'), 'genre': request.form.get('genre'),
+            'publisher': request.form.get('publisher'), 'year': published_year,
+            'lang': request.form.get('language', 'English'), 'copies': int(request.form.get('total_copies', 1)),
+            'desc': request.form.get('description'), 'cover': cover_filename, 'aid': admin_id
         }
     )
     db.session.commit()
     
-    # Get the inserted book_id
-    book_id = db.session.execute(text("SELECT LAST_INSERT_ID() as id")).first()[0]
-    
-    return jsonify({'message': 'Book added successfully', 'book_id': book_id}), 201
+    return jsonify({'message': 'Book added successfully'}), 201
 
 
 @admin_bp.route('/books/<int:book_id>', methods=['PUT'])
 @jwt_required()
 @require_admin
 def update_book(book_id):
-    """Update book details"""
-    data = request.get_json()
+    """Update book details with optional cover image"""
     admin_id = int(get_jwt_identity())
+    
+    # Handle FormData instead of JSON
+    title = request.form.get('title')
+    author = request.form.get('author')
     
     updates = []
     params = {'book_id': book_id}
     
-    updatable_fields = ['title', 'author', 'isbn', 'genre', 'publisher', 
-                       'published_year', 'language', 'total_copies', 'description']
+    # Update text fields
+    fields = {
+        'title': title,
+        'author': author,
+        'isbn': request.form.get('isbn'),
+        'genre': request.form.get('genre'),
+        'publisher': request.form.get('publisher'),
+        'published_year': request.form.get('published_year'),
+        'language': request.form.get('language'),
+        'description': request.form.get('description'),
+        'total_copies': request.form.get('total_copies')
+    }
     
-    for field in updatable_fields:
-        if field in data:
+    for field, value in fields.items():
+        if value is not None:
             updates.append(f"{field} = :{field}")
-            params[field] = data[field]
+            params[field] = value
     
     # Handle total_copies affecting available_copies
-    if 'total_copies' in data:
-        current = db.session.execute(
-            text("SELECT total_copies, available_copies FROM books WHERE book_id = :book_id"),
-            {'book_id': book_id}
-        ).first()
-        
-        if current:
-            diff = data['total_copies'] - current[0]
-            if diff != 0:
-                updates.append("available_copies = available_copies + :diff")
-                params['diff'] = diff
+    if 'total_copies' in params:
+        try:
+            new_total = int(params['total_copies'])
+            current = db.session.execute(
+                text("SELECT total_copies, available_copies FROM books WHERE book_id = :book_id"),
+                {'book_id': book_id}
+            ).first()
+            
+            if current:
+                diff = new_total - current[0]
+                if diff != 0:
+                    updates.append("available_copies = available_copies + :diff")
+                    params['diff'] = diff
+        except (ValueError, TypeError):
+            pass
+    
+    # Handle cover image upload
+    if 'cover_image' in request.files:
+        file = request.files['cover_image']
+        if file.filename:
+            ext = file.filename.rsplit('.', 1)[1].lower()
+            if ext in ['jpg', 'jpeg', 'png', 'webp']:
+                cover_filename = f"cover_{book_id}_{int(datetime.now().timestamp())}.{ext}"
+                upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
+                os.makedirs(upload_folder, exist_ok=True)
+                
+                # Delete old cover if exists
+                old_cover = db.session.execute(
+                    text("SELECT cover_image FROM books WHERE book_id = :book_id"),
+                    {'book_id': book_id}
+                ).first()
+                if old_cover and old_cover[0]:
+                    old_path = os.path.join(upload_folder, old_cover[0])
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                
+                file.save(os.path.join(upload_folder, cover_filename))
+                updates.append("cover_image = :cover_image")
+                params['cover_image'] = cover_filename
     
     if updates:
         query = f"UPDATE books SET {', '.join(updates)}, updated_at = NOW() WHERE book_id = :book_id"
