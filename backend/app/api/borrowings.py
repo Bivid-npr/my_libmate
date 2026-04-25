@@ -238,7 +238,6 @@ def reserve_book(book_id):
     
     book_data = dict(book._mapping)
     
-    # ADDED: Check if user is ALREADY BORROWING this book
     already_borrowing = db.session.execute(
         text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned','lost')"),
         {'uid': user_id, 'bid': book_id}
@@ -291,7 +290,7 @@ def get_all_reservations():
 @borrowings_bp.route('/reservations/queue', methods=['GET'])
 @jwt_required()
 def get_reservation_queue():
-    """Get all books with pending reservations, grouped by book"""
+    """Get all books with pending reservations (admin view)"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -316,7 +315,7 @@ def get_reservation_queue():
 @borrowings_bp.route('/reservations/queue/<int:book_id>', methods=['GET'])
 @jwt_required()
 def get_book_reservation_queue(book_id):
-    """Get all users in the reservation queue for a specific book"""
+    """Get all users in the reservation queue for a specific book (admin view)"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -324,6 +323,26 @@ def get_book_reservation_queue(book_id):
     result = db.session.execute(
         text("""
             SELECT r.*, u.full_name, u.email, u.phone,
+                   ROW_NUMBER() OVER (ORDER BY r.reserved_at ASC) as queue_position
+            FROM reservations r
+            JOIN users u ON r.user_id = u.user_id
+            WHERE r.book_id = :bid AND r.status = 'pending'
+            ORDER BY r.reserved_at ASC
+        """),
+        {'bid': book_id}
+    )
+    queue = [dict(row._mapping) for row in result]
+    return jsonify(queue), 200
+
+
+# ADDED: Public endpoint for book detail page
+@borrowings_bp.route('/reservations/book/<int:book_id>', methods=['GET'])
+def get_book_reservations_public(book_id):
+    """Get reservation queue for a book (public - no auth required)"""
+    result = db.session.execute(
+        text("""
+            SELECT r.reservation_id, r.user_id, r.reserved_at, r.status,
+                   u.full_name,
                    ROW_NUMBER() OVER (ORDER BY r.reserved_at ASC) as queue_position
             FROM reservations r
             JOIN users u ON r.user_id = u.user_id

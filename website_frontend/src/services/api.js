@@ -116,6 +116,7 @@ export const borrowingsAPI = {
   getAllReservations: () => apiRequest('/borrowings/reservations/all'),
   getReservationQueue: () => apiRequest('/borrowings/reservations/queue'),
   getBookReservationQueue: (bookId) => apiRequest(`/borrowings/reservations/queue/${bookId}`),
+  getBookReservationsPublic: (bookId) => apiRequest(`/borrowings/reservations/book/${bookId}`),
 };
 
 // ============ TRENDING API ============
