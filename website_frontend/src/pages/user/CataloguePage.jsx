@@ -108,12 +108,13 @@ const BookListCard = ({ book }) => (
     
     {/* Two Buttons */}
     <div className="list-action flex flex-col gap-2 justify-center flex-shrink-0">
-      <button 
-        className="px-5 py-2 text-sm font-medium rounded-lg border border-[#2C1F14] bg-[#2C1F14] text-white hover:bg-[#4A3728] hover:border-[#4A3728] transition whitespace-nowrap"
+      <Link 
+        to={`/book/${book.book_id}`}
+        className="px-5 py-2 text-sm font-medium rounded-lg border border-[#2C1F14] bg-[#2C1F14] text-white hover:bg-[#4A3728] hover:border-[#4A3728] transition whitespace-nowrap text-center"
         onClick={(e) => e.stopPropagation()}
       >
-        {book.available_copies > 0 ? 'Borrow' : 'Reserve'}
-      </button>
+        {book.available_copies > 0 ? 'View Details' : 'Join Waitlist'}
+      </Link>
       <button 
         className="px-5 py-2 text-sm font-medium rounded-lg border border-[#EAE0D0] bg-white text-[#4A3728] hover:border-[#C4895A] hover:text-[#C4895A] transition whitespace-nowrap"
         onClick={(e) => e.stopPropagation()}

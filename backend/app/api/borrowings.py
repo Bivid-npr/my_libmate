@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from sqlalchemy import text
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from ..extensions import db
 from ..utils.auth_utils import require_user
 
@@ -20,7 +20,6 @@ def get_borrowings():
         {'user_id': user_id}
     )
     borrowings = [dict(row._mapping) for row in result]
-    
     return jsonify(borrowings), 200
 
 
@@ -42,15 +41,10 @@ def get_borrow_history():
     
     result = db.session.execute(
         text(query),
-        {
-            'user_id': user_id,
-            'limit': per_page,
-            'offset': (page - 1) * per_page
-        }
+        {'user_id': user_id, 'limit': per_page, 'offset': (page - 1) * per_page}
     )
     history = [dict(row._mapping) for row in result]
     
-    # Get total count
     count_result = db.session.execute(
         text("SELECT COUNT(*) FROM vw_borrow_history WHERE user_id = :user_id"),
         {'user_id': user_id}
@@ -58,9 +52,7 @@ def get_borrow_history():
     total = count_result[0] if count_result else 0
     
     return jsonify({
-        'history': history,
-        'total': total,
-        'page': page,
+        'history': history, 'total': total, 'page': page,
         'per_page': per_page,
         'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
     }), 200
@@ -69,76 +61,62 @@ def get_borrow_history():
 @borrowings_bp.route('/borrow/<int:book_id>', methods=['POST'])
 @jwt_required()
 @require_user
-def borrow_book(book_id):
-    """Borrow a book"""
+def request_pickup(book_id):
+    """Creates 48-hour pickup reservation"""
     user_id = int(get_jwt_identity())
     
-    # Check if user has active membership
     membership = db.session.execute(
-        text("""
-            SELECT 1 FROM memberships 
-            WHERE user_id = :user_id AND status = 'active' AND expiry_date > CURDATE()
-        """),
-        {'user_id': user_id}
+        text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active' AND expiry_date > CURDATE()"),
+        {'uid': user_id}
     ).first()
-    
     if not membership:
         return jsonify({'error': 'Active membership required to borrow books'}), 403
     
-    # Check if book exists and is available
     book = db.session.execute(
-        text("SELECT * FROM books WHERE book_id = :book_id AND is_archived = FALSE"),
-        {'book_id': book_id}
+        text("SELECT * FROM books WHERE book_id = :bid AND is_archived = FALSE"),
+        {'bid': book_id}
     ).first()
-    
     if not book:
         return jsonify({'error': 'Book not found'}), 404
     
     book_data = dict(book._mapping)
-    
     if book_data['available_copies'] < 1:
-        return jsonify({'error': 'No copies available'}), 400
+        return jsonify({'error': 'No copies available. You can reserve this book instead.'}), 400
     
-    # Check if user already borrowed this book
-    existing = db.session.execute(
-        text("""
-            SELECT 1 FROM borrowings 
-            WHERE user_id = :user_id AND book_id = :book_id AND status NOT IN ('returned', 'lost')
-        """),
-        {'user_id': user_id, 'book_id': book_id}
+    already = db.session.execute(
+        text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned','lost')"),
+        {'uid': user_id, 'bid': book_id}
     ).first()
-    
-    if existing:
+    if already:
         return jsonify({'error': 'You already have this book borrowed'}), 409
     
-    # Check borrow limit (max 5 books)
-    active_count = db.session.execute(
-        text("""
-            SELECT COUNT(*) as count FROM borrowings 
-            WHERE user_id = :user_id AND status NOT IN ('returned', 'lost')
-        """),
-        {'user_id': user_id}
-    ).first()[0]
+    pending = db.session.execute(
+        text("SELECT 1 FROM reservations WHERE user_id = :uid AND book_id = :bid AND status = 'pending'"),
+        {'uid': user_id, 'bid': book_id}
+    ).first()
+    if pending:
+        return jsonify({'error': 'You already have a pending pickup reservation'}), 409
     
-    if active_count >= 5:
+    count = db.session.execute(
+        text("SELECT COUNT(*) as c FROM borrowings WHERE user_id = :uid AND status NOT IN ('returned','lost')"),
+        {'uid': user_id}
+    ).first()[0]
+    if count >= 5:
         return jsonify({'error': 'Maximum borrow limit (5 books) reached'}), 400
     
-    # Calculate due date (14 days from now)
-    due_date = date.today() + datetime.timedelta(days=14)
-    
-    # Create borrowing record
     db.session.execute(
-        text("""
-            INSERT INTO borrowings (user_id, book_id, due_date, status)
-            VALUES (:user_id, :book_id, :due_date, 'borrowed')
-        """),
-        {'user_id': user_id, 'book_id': book_id, 'due_date': due_date}
+        text("INSERT INTO reservations (user_id, book_id, expires_at, status) VALUES (:uid, :bid, DATE_ADD(NOW(), INTERVAL 48 HOUR), 'pending')"),
+        {'uid': user_id, 'bid': book_id}
+    )
+    db.session.execute(
+        text("UPDATE books SET available_copies = available_copies - 1 WHERE book_id = :bid AND available_copies > 0"),
+        {'bid': book_id}
     )
     db.session.commit()
     
     return jsonify({
-        'message': 'Book borrowed successfully',
-        'due_date': due_date.isoformat()
+        'message': 'Book reserved for pickup! Please visit the library counter within 48 hours.',
+        'expires_at': (datetime.now() + timedelta(hours=48)).strftime('%Y-%m-%d %H:%M')
     }), 201
 
 
@@ -149,52 +127,32 @@ def request_renewal(borrow_id):
     """Request renewal for a borrowed book"""
     user_id = int(get_jwt_identity())
     
-    # Check if borrow exists and belongs to user
     result = db.session.execute(
-        text("""
-            SELECT * FROM borrowings 
-            WHERE borrow_id = :borrow_id AND user_id = :user_id 
-            AND status IN ('borrowed', 'overdue', 'renewed')
-        """),
-        {'borrow_id': borrow_id, 'user_id': user_id}
+        text("SELECT * FROM borrowings WHERE borrow_id = :bid AND user_id = :uid AND status IN ('borrowed','overdue','renewed')"),
+        {'bid': borrow_id, 'uid': user_id}
     ).first()
-    
     if not result:
         return jsonify({'error': 'Borrow record not found'}), 404
     
     borrow = dict(result._mapping)
     
-    # Check renewal count (max 2 renewals)
-    if borrow['renewal_count'] >= 2:
-        return jsonify({'error': 'Maximum renewals (2) reached for this book'}), 400
-    
-    # Check if already requested
+    if borrow['renewal_count'] >= 3:
+        return jsonify({'error': 'Maximum renewals (3) reached'}), 400
     if borrow['renewal_requested']:
-        return jsonify({'error': 'Renewal already requested for this book'}), 400
+        return jsonify({'error': 'Renewal already requested'}), 400
     
-    # Check if book has reservations
     has_reservations = db.session.execute(
-        text("""
-            SELECT 1 FROM reservations 
-            WHERE book_id = :book_id AND status = 'pending'
-        """),
-        {'book_id': borrow['book_id']}
+        text("SELECT 1 FROM reservations WHERE book_id = :bid AND status = 'pending'"),
+        {'bid': borrow['book_id']}
     ).first()
-    
     if has_reservations:
         return jsonify({'error': 'Cannot renew - book has pending reservations'}), 400
     
-    # Request renewal
     db.session.execute(
-        text("""
-            UPDATE borrowings 
-            SET renewal_requested = TRUE, renewal_status = 'pending', updated_at = NOW()
-            WHERE borrow_id = :borrow_id
-        """),
-        {'borrow_id': borrow_id}
+        text("UPDATE borrowings SET renewal_requested = TRUE, renewal_status = 'pending', updated_at = NOW() WHERE borrow_id = :bid"),
+        {'bid': borrow_id}
     )
     db.session.commit()
-    
     return jsonify({'message': 'Renewal request submitted successfully'}), 200
 
 
@@ -205,30 +163,18 @@ def return_book(borrow_id):
     """Return a borrowed book"""
     user_id = int(get_jwt_identity())
     
-    # Check if borrow exists and belongs to user
     result = db.session.execute(
-        text("""
-            SELECT * FROM borrowings 
-            WHERE borrow_id = :borrow_id AND user_id = :user_id 
-            AND status IN ('borrowed', 'overdue', 'renewed')
-        """),
-        {'borrow_id': borrow_id, 'user_id': user_id}
+        text("SELECT * FROM borrowings WHERE borrow_id = :bid AND user_id = :uid AND status IN ('borrowed','overdue','renewed')"),
+        {'bid': borrow_id, 'uid': user_id}
     ).first()
-    
     if not result:
         return jsonify({'error': 'Active borrow record not found'}), 404
     
-    # Return the book (trigger will handle the rest)
     db.session.execute(
-        text("""
-            UPDATE borrowings 
-            SET status = 'returned', returned_at = NOW(), updated_at = NOW()
-            WHERE borrow_id = :borrow_id
-        """),
-        {'borrow_id': borrow_id}
+        text("UPDATE borrowings SET status = 'returned', returned_at = NOW(), updated_at = NOW() WHERE borrow_id = :bid"),
+        {'bid': borrow_id}
     )
     db.session.commit()
-    
     return jsonify({'message': 'Book returned successfully'}), 200
 
 
@@ -238,24 +184,16 @@ def return_book(borrow_id):
 def pay_fine(borrow_id):
     """Pay fine for an overdue book"""
     user_id = int(get_jwt_identity())
-    data = request.get_json()
-    payment_method = data.get('payment_method', 'card')
     
-    # Check if borrow exists and belongs to user
     result = db.session.execute(
-        text("""
-            SELECT * FROM borrowings 
-            WHERE borrow_id = :borrow_id AND user_id = :user_id
-        """),
-        {'borrow_id': borrow_id, 'user_id': user_id}
+        text("SELECT * FROM borrowings WHERE borrow_id = :bid AND user_id = :uid"),
+        {'bid': borrow_id, 'uid': user_id}
     ).first()
-    
     if not result:
         return jsonify({'error': 'Borrow record not found'}), 404
     
     borrow = dict(result._mapping)
     
-    # Calculate fine amount
     if borrow['due_date'] < date.today():
         days_overdue = (date.today() - borrow['due_date']).days
         fine_amount = days_overdue * 5.00
@@ -265,90 +203,137 @@ def pay_fine(borrow_id):
     if fine_amount <= 0:
         return jsonify({'error': 'No fine to pay'}), 400
     
-    # Update fine status
     db.session.execute(
-        text("""
-            UPDATE borrowings 
-            SET fine_status = 'paid', fine_paid_at = NOW(), updated_at = NOW()
-            WHERE borrow_id = :borrow_id
-        """),
-        {'borrow_id': borrow_id}
+        text("UPDATE borrowings SET fine_status = 'paid', fine_paid_at = NOW(), updated_at = NOW() WHERE borrow_id = :bid"),
+        {'bid': borrow_id}
     )
-    
-    # Also update in history table if exists
     db.session.execute(
-        text("""
-            UPDATE borrow_history 
-            SET fine_status = 'paid'
-            WHERE borrow_id = :borrow_id
-        """),
-        {'borrow_id': borrow_id}
+        text("UPDATE borrow_history SET fine_status = 'paid' WHERE borrow_id = :bid"),
+        {'bid': borrow_id}
     )
     db.session.commit()
-    
-    return jsonify({
-        'message': 'Fine paid successfully',
-        'amount_paid': fine_amount
-    }), 200
+    return jsonify({'message': 'Fine paid successfully', 'amount_paid': fine_amount}), 200
 
 
 @borrowings_bp.route('/reserve/<int:book_id>', methods=['POST'])
 @jwt_required()
 @require_user
 def reserve_book(book_id):
-    """Reserve a book that's currently unavailable"""
+    """Reserve a book that's currently unavailable (waitlist)"""
     user_id = int(get_jwt_identity())
     
-    # Check if user has active membership
     membership = db.session.execute(
-        text("""
-            SELECT 1 FROM memberships 
-            WHERE user_id = :user_id AND status = 'active' AND expiry_date > CURDATE()
-        """),
-        {'user_id': user_id}
+        text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active' AND expiry_date > CURDATE()"),
+        {'uid': user_id}
     ).first()
-    
     if not membership:
         return jsonify({'error': 'Active membership required to reserve books'}), 403
     
-    # Check if book exists
     book = db.session.execute(
-        text("SELECT * FROM books WHERE book_id = :book_id AND is_archived = FALSE"),
-        {'book_id': book_id}
+        text("SELECT * FROM books WHERE book_id = :bid AND is_archived = FALSE"),
+        {'bid': book_id}
     ).first()
-    
     if not book:
         return jsonify({'error': 'Book not found'}), 404
     
     book_data = dict(book._mapping)
     
-    # Check if book is available
-    if book_data['available_copies'] > 0:
-        return jsonify({'error': 'Book is available - you can borrow it directly'}), 400
-    
-    # Check if user already reserved this book
-    existing = db.session.execute(
-        text("""
-            SELECT 1 FROM reservations 
-            WHERE user_id = :user_id AND book_id = :book_id AND status = 'pending'
-        """),
-        {'user_id': user_id, 'book_id': book_id}
+    # ADDED: Check if user is ALREADY BORROWING this book
+    already_borrowing = db.session.execute(
+        text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned','lost')"),
+        {'uid': user_id, 'bid': book_id}
     ).first()
+    if already_borrowing:
+        return jsonify({'error': 'You already have this book borrowed'}), 409
     
+    if book_data['available_copies'] > 0:
+        return jsonify({'error': 'Book is available - reserve for pickup instead'}), 400
+    
+    existing = db.session.execute(
+        text("SELECT 1 FROM reservations WHERE user_id = :uid AND book_id = :bid AND status = 'pending'"),
+        {'uid': user_id, 'bid': book_id}
+    ).first()
     if existing:
         return jsonify({'error': 'You already have a pending reservation for this book'}), 409
     
-    # Create reservation (expires in 48 hours after book becomes available)
     db.session.execute(
-        text("""
-            INSERT INTO reservations (user_id, book_id, expires_at, status)
-            VALUES (:user_id, :book_id, DATE_ADD(NOW(), INTERVAL 48 HOUR), 'pending')
-        """),
-        {'user_id': user_id, 'book_id': book_id}
+        text("INSERT INTO reservations (user_id, book_id, expires_at, status) VALUES (:uid, :bid, NULL, 'pending')"),
+        {'uid': user_id, 'bid': book_id}
     )
     db.session.commit()
+    return jsonify({'message': 'Book reserved successfully! You will be notified when available.'}), 201
+
+
+# ============ RESERVATION QUEUE ENDPOINTS ============
+
+@borrowings_bp.route('/reservations/all', methods=['GET'])
+@jwt_required()
+def get_all_reservations():
+    """Get all pending reservations (admin view)"""
+    claims = get_jwt()
+    if claims.get('type') != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
     
-    return jsonify({'message': 'Book reserved successfully'}), 201
+    result = db.session.execute(
+        text("""
+            SELECT r.*, u.full_name, u.email, b.title, b.author
+            FROM reservations r
+            JOIN users u ON r.user_id = u.user_id
+            JOIN books b ON r.book_id = b.book_id
+            WHERE r.status = 'pending'
+            ORDER BY r.reserved_at ASC
+        """)
+    )
+    reservations = [dict(row._mapping) for row in result]
+    return jsonify(reservations), 200
+
+
+@borrowings_bp.route('/reservations/queue', methods=['GET'])
+@jwt_required()
+def get_reservation_queue():
+    """Get all books with pending reservations, grouped by book"""
+    claims = get_jwt()
+    if claims.get('type') != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    result = db.session.execute(
+        text("""
+            SELECT 
+                b.book_id, b.title, b.author, b.available_copies, b.total_copies,
+                COUNT(r.reservation_id) as queue_count,
+                MIN(r.reserved_at) as earliest_reservation
+            FROM books b
+            JOIN reservations r ON b.book_id = r.book_id
+            WHERE r.status = 'pending'
+            GROUP BY b.book_id, b.title, b.author, b.available_copies, b.total_copies
+            ORDER BY earliest_reservation ASC
+        """)
+    )
+    books_with_queue = [dict(row._mapping) for row in result]
+    return jsonify(books_with_queue), 200
+
+
+@borrowings_bp.route('/reservations/queue/<int:book_id>', methods=['GET'])
+@jwt_required()
+def get_book_reservation_queue(book_id):
+    """Get all users in the reservation queue for a specific book"""
+    claims = get_jwt()
+    if claims.get('type') != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    result = db.session.execute(
+        text("""
+            SELECT r.*, u.full_name, u.email, u.phone,
+                   ROW_NUMBER() OVER (ORDER BY r.reserved_at ASC) as queue_position
+            FROM reservations r
+            JOIN users u ON r.user_id = u.user_id
+            WHERE r.book_id = :bid AND r.status = 'pending'
+            ORDER BY r.reserved_at ASC
+        """),
+        {'bid': book_id}
+    )
+    queue = [dict(row._mapping) for row in result]
+    return jsonify(queue), 200
 
 
 @borrowings_bp.route('/reservations', methods=['GET'])
@@ -369,7 +354,6 @@ def get_my_reservations():
         {'user_id': user_id}
     )
     reservations = [dict(row._mapping) for row in result]
-    
     return jsonify(reservations), 200
 
 
@@ -377,20 +361,25 @@ def get_my_reservations():
 @jwt_required()
 @require_user
 def cancel_reservation(reservation_id):
-    """Cancel a reservation"""
+    """Cancel a reservation and restore book copy"""
     user_id = int(get_jwt_identity())
     
-    result = db.session.execute(
-        text("""
-            UPDATE reservations 
-            SET status = 'cancelled'
-            WHERE reservation_id = :reservation_id AND user_id = :user_id AND status = 'pending'
-        """),
-        {'reservation_id': reservation_id, 'user_id': user_id}
-    )
-    db.session.commit()
-    
-    if result.rowcount == 0:
+    reservation = db.session.execute(
+        text("SELECT * FROM reservations WHERE reservation_id = :rid AND user_id = :uid AND status = 'pending'"),
+        {'rid': reservation_id, 'uid': user_id}
+    ).first()
+    if not reservation:
         return jsonify({'error': 'Reservation not found or already processed'}), 404
     
+    res = dict(reservation._mapping)
+    
+    db.session.execute(
+        text("UPDATE reservations SET status = 'cancelled' WHERE reservation_id = :rid"),
+        {'rid': reservation_id}
+    )
+    db.session.execute(
+        text("UPDATE books SET available_copies = available_copies + 1 WHERE book_id = :bid AND available_copies < total_copies"),
+        {'bid': res['book_id']}
+    )
+    db.session.commit()
     return jsonify({'message': 'Reservation cancelled successfully'}), 200

@@ -113,6 +113,9 @@ export const borrowingsAPI = {
   getReservations: (bookId) => apiRequest(`/borrowings/reservations/${bookId}`),
   getMyReservations: () => apiRequest('/borrowings/reservations'),
   cancelReservation: (reservationId) => apiRequest(`/borrowings/reservations/${reservationId}/cancel`, { method: 'POST' }),
+  getAllReservations: () => apiRequest('/borrowings/reservations/all'),
+  getReservationQueue: () => apiRequest('/borrowings/reservations/queue'),
+  getBookReservationQueue: (bookId) => apiRequest(`/borrowings/reservations/queue/${bookId}`),
 };
 
 // ============ TRENDING API ============
@@ -167,4 +170,5 @@ export const adminAPI = {
   },
   approveBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/approve`, { method: 'POST' }),
   rejectBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/reject`, { method: 'POST' }),
+  confirmPickup: (reservationId) => apiRequest(`/admin/borrowings/confirm-pickup/${reservationId}`, { method: 'POST' }),
 };

@@ -169,7 +169,7 @@ const MyBooksPage = () => {
                 {borrowings.map((book) => {
                   const daysLeft = calculateDaysLeft(book.due_date);
                   const isOverdue = daysLeft < 0;
-                  const canRenew = !isOverdue && book.renewal_count < 2;
+                  const canRenew = !isOverdue && book.renewal_count < 3;
                   const renewalPending = book.renewal_status === 'pending';
                   const renewalApproved = book.renewal_status === 'approved';
                   const renewalRejected = book.renewal_status === 'rejected';

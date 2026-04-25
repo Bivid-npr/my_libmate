@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date  
 from ..extensions import db
 from ..utils.auth_utils import require_admin
 
@@ -264,6 +264,7 @@ def get_all_borrowings():
     per_page = request.args.get('per_page', 20, type=int)
     status = request.args.get('status')
     
+    # Use separate clean queries instead of broken replace()
     query = """
         SELECT b.*, u.full_name as user_name, u.email, bk.title as book_title, bk.author
         FROM borrowings b
@@ -271,15 +272,23 @@ def get_all_borrowings():
         JOIN books bk ON b.book_id = bk.book_id
         WHERE 1=1
     """
+    count_query = """
+        SELECT COUNT(*) as total
+        FROM borrowings b
+        JOIN users u ON b.user_id = u.user_id
+        JOIN books bk ON b.book_id = bk.book_id
+        WHERE 1=1
+    """
     params = {}
+    count_params = {}
     
     if status:
         query += " AND b.status = :status"
+        count_query += " AND b.status = :status"
         params['status'] = status
+        count_params['status'] = status
     
-    # Get total count
-    count_query = query.replace("SELECT b.*, u.full_name", "SELECT COUNT(*) as total")
-    total_result = db.session.execute(text(count_query), params).first()
+    total_result = db.session.execute(text(count_query), count_params).first()
     total = total_result[0] if total_result else 0
     
     query += " ORDER BY b.due_date ASC LIMIT :limit OFFSET :offset"
@@ -294,7 +303,7 @@ def get_all_borrowings():
         'total': total,
         'page': page,
         'per_page': per_page,
-        'total_pages': (total + per_page - 1) // per_page
+        'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
     }), 200
 
 
@@ -651,3 +660,30 @@ def reject_book_request(request_id):
     db.session.commit()
     
     return jsonify({'message': 'Book request rejected'}), 200
+
+
+@admin_bp.route('/borrowings/confirm-pickup/<int:reservation_id>', methods=['POST'])
+@jwt_required()
+@require_admin
+def confirm_pickup(reservation_id):
+    """Admin confirms user has arrived to pick up reserved book"""
+    admin_id = int(get_jwt_identity())
+    
+    reservation = db.session.execute(
+        text("SELECT * FROM reservations WHERE reservation_id = :rid AND status = 'pending'"),
+        {'rid': reservation_id}
+    ).first()
+    if not reservation:
+        return jsonify({'error': 'Reservation not found or already processed'}), 404
+    
+    res = dict(reservation._mapping)
+    due_date = date.today() + timedelta(days=14)
+    
+    # Create borrowing record - trigger handles status/counts correctly
+    db.session.execute(
+        text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
+        {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Book issued successfully!', 'due_date': due_date.isoformat()}), 201
