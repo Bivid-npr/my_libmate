@@ -14,7 +14,7 @@ const clearAuthData = () => {
   });
 };
 
-const apiRequest = async (endpoint, options = {}) => {
+export const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   const headers = { 'Content-Type': 'application/json' };
   
@@ -26,9 +26,7 @@ const apiRequest = async (endpoint, options = {}) => {
     const data = await response.json();
     
     if (response.status === 401) {
-      if (isAuthEndpoint(endpoint)) {
-        throw new Error(data.error || 'Invalid credentials');
-      }
+      if (isAuthEndpoint(endpoint)) throw new Error(data.error || 'Invalid credentials');
       if (!['/login', '/register'].includes(window.location.pathname)) {
         clearAuthData();
         window.location.href = '/login';
@@ -37,7 +35,6 @@ const apiRequest = async (endpoint, options = {}) => {
     }
     
     if (!response.ok) throw new Error(data.error || 'Something went wrong');
-    
     return data;
   } catch (error) {
     if (!isAuthEndpoint(endpoint)) console.error('API Error:', error);
@@ -48,10 +45,7 @@ const apiRequest = async (endpoint, options = {}) => {
 // ============ AUTH API ============
 export const authAPI = {
   login: (email, password, rememberMe = false) => 
-    apiRequest('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, remember_me: rememberMe })
-    }),
+    apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, remember_me: rememberMe }) }),
   register: (userData) => apiRequest('/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
   getCurrentUser: () => apiRequest('/auth/me'),
   changePassword: (oldPassword, newPassword) => 
@@ -82,15 +76,16 @@ export const usersAPI = {
   addToWishlist: (bookId) => apiRequest(`/users/me/wishlist/${bookId}`, { method: 'POST' }),
   removeFromWishlist: (bookId) => apiRequest(`/users/me/wishlist/${bookId}`, { method: 'DELETE' }),
   getRecommendations: (limit = 10) => recommendationsAPI.getRecommendations(limit),
+  getNotifications: () => apiRequest('/users/me/notifications'),
+  markNotificationRead: (id) => apiRequest(`/users/me/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => apiRequest('/users/me/notifications/read-all', { method: 'POST' }),
 };
 
 // ============ MEMBERSHIP API ============
 export const membershipAPI = {
   apply: async (formData) => {
     const response = await fetch(`${API_BASE_URL}/membership/apply`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${getToken()}` },
-      body: formData
+      method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` }, body: formData
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Application failed');

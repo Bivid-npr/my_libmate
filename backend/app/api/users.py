@@ -261,3 +261,55 @@ def remove_from_wishlist(book_id):
         return jsonify({'error': 'Book not in wishlist'}), 404
     
     return jsonify({'message': 'Removed from wishlist'}), 200
+
+
+@users_bp.route('/me/notifications', methods=['GET'])
+@jwt_required()
+@require_user
+def get_my_notifications():
+    """Get current user's notifications"""
+    user_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("""
+            SELECT n.*, un.is_read, un.read_at
+            FROM notifications n
+            JOIN user_notifications un ON n.notification_id = un.notification_id
+            WHERE un.user_id = :uid
+            ORDER BY n.created_at DESC
+            LIMIT 50
+        """),
+        {'uid': user_id}
+    )
+    notifications = [dict(row._mapping) for row in result]
+    return jsonify(notifications), 200
+
+
+@users_bp.route('/me/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required()
+@require_user
+def mark_notification_read(notification_id):
+    """Mark a notification as read"""
+    user_id = int(get_jwt_identity())
+    
+    db.session.execute(
+        text("UPDATE user_notifications SET is_read = TRUE, read_at = NOW() WHERE user_id = :uid AND notification_id = :nid"),
+        {'uid': user_id, 'nid': notification_id}
+    )
+    db.session.commit()
+    return jsonify({'message': 'Marked as read'}), 200
+
+
+@users_bp.route('/me/notifications/read-all', methods=['POST'])
+@jwt_required()
+@require_user
+def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    user_id = int(get_jwt_identity())
+    
+    db.session.execute(
+        text("UPDATE user_notifications SET is_read = TRUE, read_at = NOW() WHERE user_id = :uid AND is_read = FALSE"),
+        {'uid': user_id}
+    )
+    db.session.commit()
+    return jsonify({'message': 'All marked as read'}), 200

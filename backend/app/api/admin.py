@@ -634,32 +634,94 @@ def get_book_requests():
 @jwt_required()
 @require_admin
 def approve_book_request(request_id):
-    """Approve a book request"""
+    """Approve a book request and notify user"""
     admin_id = int(get_jwt_identity())
     
+    # Get request details
+    request_data = db.session.execute(
+        text("SELECT * FROM book_requests WHERE request_id = :rid"),
+        {'rid': request_id}
+    ).first()
+    
+    if not request_data:
+        return jsonify({'error': 'Request not found'}), 404
+    
+    req = dict(request_data._mapping)
+    
+    # Update request status
     db.session.execute(
-        text("UPDATE book_requests SET status = 'approved', updated_at = NOW() WHERE request_id = :request_id"),
-        {'request_id': request_id}
+        text("UPDATE book_requests SET status = 'approved', updated_at = NOW() WHERE request_id = :rid"),
+        {'rid': request_id}
     )
+    
+    # Create notification
+    db.session.execute(
+        text("""
+            INSERT INTO notifications (type, title, message)
+            VALUES ('book_request', :title, :message)
+        """),
+        {
+            'title': 'Book Request Approved!',
+            'message': f"Your request for '{req['title']}' has been approved! The library will add this book soon."
+        }
+    )
+    
+    # Get notification ID and link to user
+    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
+    
+    db.session.execute(
+        text("INSERT INTO user_notifications (user_id, notification_id) VALUES (:uid, :nid)"),
+        {'uid': req['user_id'], 'nid': notification_id}
+    )
+    
     db.session.commit()
     
-    return jsonify({'message': 'Book request approved'}), 200
+    return jsonify({'message': 'Book request approved and user notified'}), 200
 
 
 @admin_bp.route('/book-requests/<int:request_id>/reject', methods=['POST'])
 @jwt_required()
 @require_admin
 def reject_book_request(request_id):
-    """Reject a book request"""
+    """Reject a book request and notify user"""
     admin_id = int(get_jwt_identity())
     
+    request_data = db.session.execute(
+        text("SELECT * FROM book_requests WHERE request_id = :rid"),
+        {'rid': request_id}
+    ).first()
+    
+    if not request_data:
+        return jsonify({'error': 'Request not found'}), 404
+    
+    req = dict(request_data._mapping)
+    
     db.session.execute(
-        text("UPDATE book_requests SET status = 'rejected', updated_at = NOW() WHERE request_id = :request_id"),
-        {'request_id': request_id}
+        text("UPDATE book_requests SET status = 'rejected', updated_at = NOW() WHERE request_id = :rid"),
+        {'rid': request_id}
     )
+    
+    db.session.execute(
+        text("""
+            INSERT INTO notifications (type, title, message)
+            VALUES ('book_request', :title, :message)
+        """),
+        {
+            'title': 'Book Request Update',
+            'message': f"Your request for '{req['title']}' could not be fulfilled at this time."
+        }
+    )
+    
+    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
+    
+    db.session.execute(
+        text("INSERT INTO user_notifications (user_id, notification_id) VALUES (:uid, :nid)"),
+        {'uid': req['user_id'], 'nid': notification_id}
+    )
+    
     db.session.commit()
     
-    return jsonify({'message': 'Book request rejected'}), 200
+    return jsonify({'message': 'Book request rejected and user notified'}), 200
 
 
 @admin_bp.route('/borrowings/confirm-pickup/<int:reservation_id>', methods=['POST'])
@@ -687,3 +749,4 @@ def confirm_pickup(reservation_id):
     db.session.commit()
     
     return jsonify({'message': 'Book issued successfully!', 'due_date': due_date.isoformat()}), 201
+
