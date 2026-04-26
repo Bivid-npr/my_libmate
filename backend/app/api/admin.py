@@ -16,42 +16,34 @@ def admin_dashboard():
     """Admin dashboard statistics"""
     admin_id = int(get_jwt_identity())
     
-    # Get various stats
     stats = {}
     
-    # Total users
     result = db.session.execute(text("SELECT COUNT(*) as total FROM users WHERE is_active = TRUE"))
     stats['total_users'] = result.first()[0]
     
-    # Total books
     result = db.session.execute(text("SELECT COUNT(*) as total FROM books WHERE is_archived = FALSE"))
     stats['total_books'] = result.first()[0]
     
-    # Active borrowings
     result = db.session.execute(
         text("SELECT COUNT(*) as total FROM borrowings WHERE status NOT IN ('returned', 'lost')")
     )
     stats['active_borrowings'] = result.first()[0]
     
-    # Overdue borrowings
     result = db.session.execute(
         text("SELECT COUNT(*) as total FROM borrowings WHERE due_date < CURDATE() AND status NOT IN ('returned', 'lost')")
     )
     stats['overdue_borrowings'] = result.first()[0]
     
-    # Pending memberships
     result = db.session.execute(
         text("SELECT COUNT(*) as total FROM memberships WHERE status = 'pending'")
     )
     stats['pending_memberships'] = result.first()[0]
     
-    # Pending renewals
     result = db.session.execute(
         text("SELECT COUNT(*) as total FROM borrowings WHERE renewal_requested = TRUE AND renewal_status = 'pending'")
     )
     stats['pending_renewals'] = result.first()[0]
     
-    # Total revenue from fines (last 30 days)
     result = db.session.execute(
         text("""
             SELECT SUM(fine_amount) as total 
@@ -61,7 +53,6 @@ def admin_dashboard():
     )
     stats['revenue_last_30_days'] = float(result.first()[0] or 0)
     
-    # Recent activities
     recent_borrows = db.session.execute(
         text("""
             SELECT b.borrow_id, u.full_name as user_name, bk.title as book_title, b.issued_at
@@ -90,7 +81,6 @@ def add_book():
     if not title or not author:
         return jsonify({'error': 'Title and author are required'}), 400
     
-    # Validate year
     published_year = request.form.get('published_year')
     if published_year:
         try:
@@ -100,16 +90,15 @@ def add_book():
         except ValueError:
             published_year = None
     
-    # Handle cover image
     cover_filename = None
     if 'cover_image' in request.files:
         file = request.files['cover_image']
-        if file.filename:
-            ext = file.filename.rsplit('.', 1)[1].lower()
+        if file.filename and file.filename.strip():
+            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
             if ext in ['jpg', 'jpeg', 'png', 'webp']:
-                cover_filename = f"cover_{int(datetime.now().timestamp())}.{ext}"
                 upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
                 os.makedirs(upload_folder, exist_ok=True)
+                cover_filename = f"cover_{int(datetime.now().timestamp())}.{ext}"
                 file.save(os.path.join(upload_folder, cover_filename))
     
     db.session.execute(
@@ -137,17 +126,12 @@ def update_book(book_id):
     """Update book details with optional cover image"""
     admin_id = int(get_jwt_identity())
     
-    # Handle FormData instead of JSON
-    title = request.form.get('title')
-    author = request.form.get('author')
-    
     updates = []
     params = {'book_id': book_id}
     
-    # Update text fields
     fields = {
-        'title': title,
-        'author': author,
+        'title': request.form.get('title'),
+        'author': request.form.get('author'),
         'isbn': request.form.get('isbn'),
         'genre': request.form.get('genre'),
         'publisher': request.form.get('publisher'),
@@ -162,7 +146,6 @@ def update_book(book_id):
             updates.append(f"{field} = :{field}")
             params[field] = value
     
-    # Handle total_copies affecting available_copies
     if 'total_copies' in params:
         try:
             new_total = int(params['total_copies'])
@@ -170,7 +153,6 @@ def update_book(book_id):
                 text("SELECT total_copies, available_copies FROM books WHERE book_id = :book_id"),
                 {'book_id': book_id}
             ).first()
-            
             if current:
                 diff = new_total - current[0]
                 if diff != 0:
@@ -179,17 +161,15 @@ def update_book(book_id):
         except (ValueError, TypeError):
             pass
     
-    # Handle cover image upload
+    upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
+    
     if 'cover_image' in request.files:
         file = request.files['cover_image']
-        if file.filename:
-            ext = file.filename.rsplit('.', 1)[1].lower()
+        if file.filename and file.filename.strip():
+            ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
             if ext in ['jpg', 'jpeg', 'png', 'webp']:
-                cover_filename = f"cover_{book_id}_{int(datetime.now().timestamp())}.{ext}"
-                upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
                 os.makedirs(upload_folder, exist_ok=True)
                 
-                # Delete old cover if exists
                 old_cover = db.session.execute(
                     text("SELECT cover_image FROM books WHERE book_id = :book_id"),
                     {'book_id': book_id}
@@ -197,8 +177,12 @@ def update_book(book_id):
                 if old_cover and old_cover[0]:
                     old_path = os.path.join(upload_folder, old_cover[0])
                     if os.path.exists(old_path):
-                        os.remove(old_path)
+                        try:
+                            os.remove(old_path)
+                        except Exception as e:
+                            print(f"Error deleting old cover: {e}")
                 
+                cover_filename = f"cover_{book_id}_{int(datetime.now().timestamp())}.{ext}"
                 file.save(os.path.join(upload_folder, cover_filename))
                 updates.append("cover_image = :cover_image")
                 params['cover_image'] = cover_filename
@@ -215,11 +199,25 @@ def update_book(book_id):
 @jwt_required()
 @require_admin
 def archive_book(book_id):
-    """Archive a book (soft delete)"""
+    """Archive a book (soft delete) - clean up cover file"""
     admin_id = int(get_jwt_identity())
     
+    book = db.session.execute(
+        text("SELECT cover_image FROM books WHERE book_id = :book_id"),
+        {'book_id': book_id}
+    ).first()
+    
+    if book and book[0]:
+        upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
+        cover_path = os.path.join(upload_folder, book[0])
+        if os.path.exists(cover_path):
+            try:
+                os.remove(cover_path)
+            except Exception as e:
+                print(f"Error deleting cover during archive: {e}")
+    
     db.session.execute(
-        text("UPDATE books SET is_archived = TRUE, updated_at = NOW() WHERE book_id = :book_id"),
+        text("UPDATE books SET is_archived = TRUE, cover_image = NULL, updated_at = NOW() WHERE book_id = :book_id"),
         {'book_id': book_id}
     )
     db.session.commit()
@@ -257,11 +255,8 @@ def approve_membership(membership_id):
     data = request.get_json()
     
     duration_months = data.get('duration_months', 12)
-    
-    # Generate card number
     card_number = f"LIB-{datetime.now().strftime('%Y%m%d')}-{membership_id:04d}"
     
-    # Update membership
     db.session.execute(
         text("""
             UPDATE memberships 
@@ -318,7 +313,6 @@ def get_all_borrowings():
     per_page = request.args.get('per_page', 20, type=int)
     status = request.args.get('status')
     
-    # Use separate clean queries instead of broken replace()
     query = """
         SELECT b.*, u.full_name as user_name, u.email, bk.title as book_title, bk.author
         FROM borrowings b
@@ -353,9 +347,7 @@ def get_all_borrowings():
     borrowings = [dict(row._mapping) for row in result]
     
     return jsonify({
-        'borrowings': borrowings,
-        'total': total,
-        'page': page,
+        'borrowings': borrowings, 'total': total, 'page': page,
         'per_page': per_page,
         'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
     }), 200
@@ -368,7 +360,6 @@ def approve_renewal(borrow_id):
     """Approve a renewal request"""
     admin_id = int(get_jwt_identity())
     
-    # Get current borrow record
     result = db.session.execute(
         text("SELECT * FROM borrowings WHERE borrow_id = :borrow_id"),
         {'borrow_id': borrow_id}
@@ -379,14 +370,11 @@ def approve_renewal(borrow_id):
     
     borrow = dict(result._mapping)
     
-    # Check if renewal was requested
     if not borrow['renewal_requested']:
         return jsonify({'error': 'No renewal requested for this book'}), 400
     
-    # Calculate new due date (extend by 14 days)
     new_due_date = datetime.now() + timedelta(days=14)
     
-    # Update borrow record
     db.session.execute(
         text("""
             UPDATE borrowings 
@@ -402,10 +390,7 @@ def approve_renewal(borrow_id):
     )
     db.session.commit()
     
-    return jsonify({
-        'message': 'Renewal approved', 
-        'new_due_date': new_due_date.date().isoformat()
-    }), 200
+    return jsonify({'message': 'Renewal approved', 'new_due_date': new_due_date.date().isoformat()}), 200
 
 
 @admin_bp.route('/borrowings/<int:borrow_id>/renew/reject', methods=['POST'])
@@ -453,9 +438,6 @@ def get_all_users():
         query += " AND (u.full_name LIKE :search OR u.email LIKE :search)"
         params['search'] = f'%{search}%'
     
-    # Get total count
-    count_query = query.replace("SELECT u.*,", "SELECT COUNT(*) as total FROM (SELECT u.user_id") + ") as temp"
-    # Simpler count query
     count_params = params.copy()
     count_query_simple = "SELECT COUNT(*) as total FROM users u WHERE 1=1"
     if search:
@@ -471,11 +453,8 @@ def get_all_users():
     users = [dict(row._mapping) for row in result]
     
     return jsonify({
-        'users': users,
-        'total': total,
-        'page': page,
-        'per_page': per_page,
-        'total_pages': (total + per_page - 1) // per_page
+        'users': users, 'total': total, 'page': page,
+        'per_page': per_page, 'total_pages': (total + per_page - 1) // per_page
     }), 200
 
 
@@ -496,18 +475,11 @@ def get_user_details(user_id):
     
     user_data = dict(user._mapping)
     
-    # Get membership info
     membership = db.session.execute(
-        text("""
-            SELECT * FROM memberships 
-            WHERE user_id = :user_id 
-            ORDER BY requested_at DESC 
-            LIMIT 1
-        """),
+        text("SELECT * FROM memberships WHERE user_id = :user_id ORDER BY requested_at DESC LIMIT 1"),
         {'user_id': user_id}
     ).first()
     
-    # Get active borrowings
     borrowings = db.session.execute(
         text("""
             SELECT b.*, bk.title, bk.author
@@ -518,7 +490,6 @@ def get_user_details(user_id):
         {'user_id': user_id}
     )
     
-    # Get history count
     history_count = db.session.execute(
         text("SELECT COUNT(*) as total FROM borrow_history WHERE user_id = :user_id"),
         {'user_id': user_id}
@@ -571,48 +542,32 @@ def get_borrowing_stats():
     """Get borrowing statistics for charts"""
     admin_id = int(get_jwt_identity())
     
-    # Daily borrowings for last 30 days
     daily = db.session.execute(
         text("""
-            SELECT 
-                DATE(issued_at) as date,
-                COUNT(*) as count
+            SELECT DATE(issued_at) as date, COUNT(*) as count
             FROM borrowings
             WHERE issued_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY DATE(issued_at)
-            ORDER BY date ASC
+            GROUP BY DATE(issued_at) ORDER BY date ASC
         """)
     )
     daily_stats = [dict(row._mapping) for row in daily]
     
-    # Top books
     top_books = db.session.execute(
         text("""
-            SELECT 
-                b.book_id,
-                b.title,
-                b.author,
-                COUNT(*) as borrow_count
+            SELECT b.book_id, b.title, b.author, COUNT(*) as borrow_count
             FROM borrow_history bh
             JOIN books b ON bh.book_id = b.book_id
             WHERE bh.returned_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
-            GROUP BY b.book_id
-            ORDER BY borrow_count DESC
-            LIMIT 10
+            GROUP BY b.book_id ORDER BY borrow_count DESC LIMIT 10
         """)
     )
     top_books_list = [dict(row._mapping) for row in top_books]
     
-    # Genre distribution
     genres = db.session.execute(
         text("""
-            SELECT 
-                genre,
-                COUNT(*) as count
-            FROM books
-            WHERE is_archived = FALSE AND genre IS NOT NULL
-            GROUP BY genre
-            ORDER BY count DESC
+            SELECT genre, COUNT(*) as count
+            FROM books WHERE is_archived = FALSE AND genre IS NOT NULL
+            GROUP BY genre ORDER BY count DESC
         """)
     )
     genre_stats = [dict(row._mapping) for row in genres]
@@ -631,29 +586,21 @@ def get_revenue_stats():
     """Get revenue statistics"""
     admin_id = int(get_jwt_identity())
     
-    # Monthly revenue
     monthly = db.session.execute(
         text("""
-            SELECT 
-                DATE_FORMAT(returned_at, '%Y-%m') as month,
-                SUM(fine_amount) as revenue
+            SELECT DATE_FORMAT(returned_at, '%Y-%m') as month, SUM(fine_amount) as revenue
             FROM borrow_history
             WHERE fine_status = 'paid' AND returned_at > DATE_SUB(NOW(), INTERVAL 12 MONTH)
-            GROUP BY DATE_FORMAT(returned_at, '%Y-%m')
-            ORDER BY month ASC
+            GROUP BY DATE_FORMAT(returned_at, '%Y-%m') ORDER BY month ASC
         """)
     )
     monthly_stats = [dict(row._mapping) for row in monthly]
     
-    # Total revenue
     total = db.session.execute(
         text("SELECT SUM(fine_amount) as total FROM borrow_history WHERE fine_status = 'paid'")
     ).first()[0] or 0
     
-    return jsonify({
-        'monthly_revenue': monthly_stats,
-        'total_revenue': float(total)
-    }), 200
+    return jsonify({'monthly_revenue': monthly_stats, 'total_revenue': float(total)}), 200
 
 
 @admin_bp.route('/book-requests', methods=['GET'])
@@ -691,7 +638,6 @@ def approve_book_request(request_id):
     """Approve a book request and notify user"""
     admin_id = int(get_jwt_identity())
     
-    # Get request details
     request_data = db.session.execute(
         text("SELECT * FROM book_requests WHERE request_id = :rid"),
         {'rid': request_id}
@@ -702,32 +648,25 @@ def approve_book_request(request_id):
     
     req = dict(request_data._mapping)
     
-    # Update request status
     db.session.execute(
         text("UPDATE book_requests SET status = 'approved', updated_at = NOW() WHERE request_id = :rid"),
         {'rid': request_id}
     )
     
-    # Create notification
     db.session.execute(
-        text("""
-            INSERT INTO notifications (type, title, message)
-            VALUES ('book_request', :title, :message)
-        """),
+        text("INSERT INTO notifications (type, title, message) VALUES ('book_request', :title, :message)"),
         {
             'title': 'Book Request Approved!',
             'message': f"Your request for '{req['title']}' has been approved! The library will add this book soon."
         }
     )
     
-    # Get notification ID and link to user
     notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
     
     db.session.execute(
         text("INSERT INTO user_notifications (user_id, notification_id) VALUES (:uid, :nid)"),
         {'uid': req['user_id'], 'nid': notification_id}
     )
-    
     db.session.commit()
     
     return jsonify({'message': 'Book request approved and user notified'}), 200
@@ -756,10 +695,7 @@ def reject_book_request(request_id):
     )
     
     db.session.execute(
-        text("""
-            INSERT INTO notifications (type, title, message)
-            VALUES ('book_request', :title, :message)
-        """),
+        text("INSERT INTO notifications (type, title, message) VALUES ('book_request', :title, :message)"),
         {
             'title': 'Book Request Update',
             'message': f"Your request for '{req['title']}' could not be fulfilled at this time."
@@ -772,7 +708,6 @@ def reject_book_request(request_id):
         text("INSERT INTO user_notifications (user_id, notification_id) VALUES (:uid, :nid)"),
         {'uid': req['user_id'], 'nid': notification_id}
     )
-    
     db.session.commit()
     
     return jsonify({'message': 'Book request rejected and user notified'}), 200
@@ -795,7 +730,6 @@ def confirm_pickup(reservation_id):
     res = dict(reservation._mapping)
     due_date = date.today() + timedelta(days=14)
     
-    # Create borrowing record - trigger handles status/counts correctly
     db.session.execute(
         text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
         {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
@@ -803,4 +737,3 @@ def confirm_pickup(reservation_id):
     db.session.commit()
     
     return jsonify({'message': 'Book issued successfully!', 'due_date': due_date.isoformat()}), 201
-
