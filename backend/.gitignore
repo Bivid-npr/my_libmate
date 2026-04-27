@@ -1,58 +1,111 @@
-# Python
+# ============================================================
+# PYTHON / FLASK BACKEND .gitignore — LibMate
+# ============================================================
+
+# Virtual Environment (entire .venv folder)
+.venv/
+venv/
+env/
+ENV/
+
+# Bytecode Cache
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
+
+# Distribution / Packaging
 build/
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.whl
 
-# Flask
-instance/
-.webassets-cache
+# Environment Variables (IMPORTANT: keep secrets out!)
+.env
 .env.local
 .env.production
+.env.*
 
-# Database
+# Flask instance folder
+instance/
+.webassets-cache
+
+# Database files
 *.db
 *.sqlite
 *.sqlite3
+*.dump
 
-# IDE
+# Uploaded files (keep local but not in git)
+uploads/covers/*
+uploads/photos/*
+uploads/receipts/*
+# Keep the folders themselves
+!uploads/covers/.gitkeep
+!uploads/photos/.gitkeep
+!uploads/receipts/.gitkeep
+
+# Static QR images
+static/qr/*.png
+static/qr/*.jpg
+!static/qr/.gitkeep
+
+# ============================================================
+# IDE / EDITOR
+# ============================================================
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+*.tmproj
 
-# Logs
-*.log
-logs/
-
-# OS
+# ============================================================
+# OS FILES
+# ============================================================
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
-# Testing
+# ============================================================
+# TESTING
+# ============================================================
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
 
-# Environment
-.env
+# ============================================================
+# LOGS
+# ============================================================
+*.log
+logs/
+*.out
+
+# ============================================================
+# DOCKER (if used later)
+# ============================================================
+docker-compose.override.yml
+
+# ============================================================
+# MISCELLANEOUS
+# ============================================================
+*.bak
+*.tmp
+*.temp
+.cache/
+session/
