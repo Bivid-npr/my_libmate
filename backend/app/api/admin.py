@@ -1372,3 +1372,86 @@ def deactivate_admin_account():
     db.session.commit()
     
     return jsonify({'message': 'Account deactivated. You will be logged out.'}), 200
+
+# ============================================================
+# ADMIN MANAGEMENT (admin managing other admins)
+# ============================================================
+
+@admin_bp.route('/admins', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_all_admins():
+    """Get all admins"""
+    admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("""
+            SELECT admin_id, full_name, email, phone, profile_picture, is_active, created_at
+            FROM admins
+            ORDER BY created_at DESC
+        """)
+    )
+    admins = [dict(row._mapping) for row in result]
+    return jsonify(admins), 200
+
+
+@admin_bp.route('/admins', methods=['POST'])
+@jwt_required()
+@require_admin
+def create_admin():
+    """Create a new admin account"""
+    current_admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    full_name = data.get('full_name', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip()
+    phone = data.get('phone', '').strip()
+    
+    if not full_name or not email or not password:
+        return jsonify({'error': 'Full name, email, and password are required'}), 400
+    
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    # Check if email already exists in admins or users
+    existing = db.session.execute(
+        text("SELECT admin_id FROM admins WHERE email = :email UNION SELECT user_id FROM users WHERE email = :email"),
+        {'email': email}
+    ).first()
+    
+    if existing:
+        return jsonify({'error': 'Email already in use'}), 409
+    
+    import bcrypt
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    db.session.execute(
+        text("""
+            INSERT INTO admins (full_name, email, phone, password_hash, is_active)
+            VALUES (:full_name, :email, :phone, :password_hash, TRUE)
+        """),
+        {'full_name': full_name, 'email': email, 'phone': phone, 'password_hash': hashed}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': f'Admin "{full_name}" created successfully'}), 201
+
+
+@admin_bp.route('/admins/<int:target_admin_id>', methods=['DELETE'])
+@jwt_required()
+@require_admin
+def remove_admin(target_admin_id):
+    """Deactivate an admin account (can't delete yourself)"""
+    current_admin_id = int(get_jwt_identity())
+    
+    if current_admin_id == target_admin_id:
+        return jsonify({'error': 'You cannot deactivate your own account. Use the profile deactivation instead.'}), 400
+    
+    db.session.execute(
+        text("UPDATE admins SET is_active = FALSE, updated_at = NOW() WHERE admin_id = :aid"),
+        {'aid': target_admin_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Admin deactivated successfully'}), 200

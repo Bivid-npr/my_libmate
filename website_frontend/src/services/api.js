@@ -212,4 +212,7 @@ export const adminAPI = {
     apiRequest('/admin/profile/change-password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
   deactivateAdminAccount: (password) => 
     apiRequest('/admin/profile/deactivate', { method: 'POST', body: JSON.stringify({ password }) }),
+  getAdmins: () => apiRequest('/admin/admins'),
+  createAdmin: (data) => apiRequest('/admin/admins', { method: 'POST', body: JSON.stringify(data) }),
+  removeAdmin: (id) => apiRequest(`/admin/admins/${id}`, { method: 'DELETE' }),
 };
