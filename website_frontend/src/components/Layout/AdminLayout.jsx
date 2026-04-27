@@ -4,7 +4,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   FaTachometerAlt, FaBook, FaUsers, FaExchangeAlt, 
   FaBullhorn, FaFire, FaSignOutAlt, FaChevronLeft, FaChevronRight,
-  FaCreditCard, FaBell, FaBookOpen
+  FaCreditCard, FaBell, FaBookOpen, FaUserShield
 } from 'react-icons/fa';
 import { io } from 'socket.io-client';
 import { useAuth } from '../../context/AuthContext';
@@ -76,6 +76,8 @@ const AdminLayoutContent = () => {
     { path: '/admin/notifications', label: 'Notifications', icon: FaBell },
   ];
 
+  // Check if profile is active
+  const isProfileActive = location.pathname === '/admin/profile';
   const sidebarWidth = sidebarCollapsed ? 'w-20' : 'w-64';
 
   return (
@@ -103,18 +105,40 @@ const AdminLayoutContent = () => {
             );
           })}
         </nav>
+
+        {/* Bottom Section - Profile + Logout */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[#4A3728]">
-          <div className={`flex items-center gap-3 mb-3 ${sidebarCollapsed && 'justify-center'}`}>
-            <div className="w-8 h-8 bg-[#C4895A] rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-sm font-semibold">{user?.full_name?.charAt(0) || 'A'}</span>
-            </div>
-            {!sidebarCollapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">{user?.full_name}</p>
-                <p className="text-[#9A8478] text-xs">Administrator</p>
+          {/* Profile Link */}
+          <Link
+            to="/admin/profile"
+            className={`flex items-center gap-3 mb-3 p-2 rounded-lg transition ${
+              isProfileActive ? 'bg-[#C4895A]' : 'hover:bg-[#4A3728]'
+            } ${sidebarCollapsed && 'justify-center'}`}
+          >
+            {user?.profile_picture ? (
+              <img
+                src={`http://localhost:5000/uploads/photos/${user.profile_picture}`}
+                alt={user?.full_name}
+                className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 bg-[#C4895A] rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-sm font-semibold">{user?.full_name?.charAt(0) || 'A'}</span>
               </div>
             )}
-          </div>
+            {!sidebarCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium truncate ${isProfileActive ? 'text-white' : 'text-white'}`}>
+                  {user?.full_name}
+                </p>
+                <p className={`text-xs ${isProfileActive ? 'text-white/70' : 'text-[#9A8478]'}`}>
+                  Administrator
+                </p>
+              </div>
+            )}
+          </Link>
+
+          {/* Logout Button */}
           <button onClick={handleLogout}
             className={`flex items-center gap-3 w-full px-3 py-2 text-[#9A8478] hover:bg-[#4A3728] hover:text-white rounded-lg transition ${sidebarCollapsed && 'justify-center'}`}>
             <FaSignOutAlt size={18} />{!sidebarCollapsed && <span className="text-sm">Logout</span>}
@@ -127,7 +151,9 @@ const AdminLayoutContent = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-serif font-bold text-[#2C1F14]">
-                {navItems.find(item => item.path === location.pathname || (item.path !== '/admin' && location.pathname.startsWith(item.path)))?.label || 'Admin'}
+                {location.pathname === '/admin/profile' 
+                  ? 'My Profile' 
+                  : navItems.find(item => item.path === location.pathname || (item.path !== '/admin' && location.pathname.startsWith(item.path)))?.label || 'Admin'}
               </h1>
               <p className="text-sm text-[#9A8478] mt-0.5">
                 {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}

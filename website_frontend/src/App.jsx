@@ -37,6 +37,8 @@ import BookRequestsPage from './pages/admin/BookRequestsPage';
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage';
 import AdminSmokeAlertsPage from './pages/admin/SmokeAtertPage';
 import AdminNotificationsPage from './pages/admin/NotificationsPage';
+import AdminProfilePage from './pages/admin/AdminProfilePage';
+
 
 // Redirect admin away from user pages
 const AdminRedirect = ({ children }) => {
@@ -167,6 +169,7 @@ function AppContent() {
         <Route path="announcements" element={<AdminAnnouncementsPage />} />
         <Route path="smoke-alerts" element={<AdminSmokeAlertsPage />} />
         <Route path="notifications" element={<AdminNotificationsPage />} />
+        <Route path="profile" element={<AdminProfilePage />} />
         
         <Route path="*" element={
           <div className="text-center py-12">

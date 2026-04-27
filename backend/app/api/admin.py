@@ -1169,3 +1169,206 @@ def delete_announcement(notification_id):
     db.session.commit()
     
     return jsonify({'message': 'Announcement deleted'}), 200
+
+# ============================================================
+# ADMIN PROFILE
+# ============================================================
+
+@admin_bp.route('/profile', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_admin_profile():
+    """Get current admin's profile"""
+    admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("SELECT admin_id, full_name, email, phone, profile_picture, is_active, created_at, updated_at FROM admins WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    ).first()
+    
+    if not result:
+        return jsonify({'error': 'Admin not found'}), 404
+    
+    admin = dict(result._mapping)
+    return jsonify(admin), 200
+
+
+@admin_bp.route('/profile', methods=['PUT'])
+@jwt_required()
+@require_admin
+def update_admin_profile():
+    """Update admin's profile"""
+    admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    updates = []
+    params = {'admin_id': admin_id}
+    
+    if 'full_name' in data and data['full_name']:
+        updates.append("full_name = :full_name")
+        params['full_name'] = data['full_name'].strip()
+    
+    if 'phone' in data:
+        updates.append("phone = :phone")
+        params['phone'] = data['phone'].strip() if data['phone'] else None
+    
+    if updates:
+        updates.append("updated_at = NOW()")
+        query = f"UPDATE admins SET {', '.join(updates)} WHERE admin_id = :admin_id"
+        db.session.execute(text(query), params)
+        db.session.commit()
+    
+    return jsonify({'message': 'Profile updated successfully'}), 200
+
+
+@admin_bp.route('/profile/upload-photo', methods=['POST'])
+@jwt_required()
+@require_admin
+def upload_admin_photo():
+    """Upload admin profile photo"""
+    admin_id = int(get_jwt_identity())
+    
+    if 'profile_photo' not in request.files:
+        return jsonify({'error': 'No photo provided'}), 400
+    
+    photo = request.files['profile_photo']
+    if not photo.filename:
+        return jsonify({'error': 'No file selected'}), 400
+    
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'webp'}
+    file_ext = photo.filename.rsplit('.', 1)[1].lower() if '.' in photo.filename else ''
+    
+    if file_ext not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type. Use PNG, JPG, or WEBP'}), 400
+    
+    if photo.content_length and photo.content_length > 5 * 1024 * 1024:
+        return jsonify({'error': 'Photo too large. Max 5MB'}), 400
+    
+    upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'photos')
+    os.makedirs(upload_folder, exist_ok=True)
+    
+    # Delete old photo
+    old = db.session.execute(
+        text("SELECT profile_picture FROM admins WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    ).first()
+    
+    if old and old[0]:
+        old_path = os.path.join(upload_folder, old[0])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    
+    filename = f"admin_{admin_id}_{int(datetime.now().timestamp())}.{file_ext}"
+    photo.save(os.path.join(upload_folder, filename))
+    
+    db.session.execute(
+        text("UPDATE admins SET profile_picture = :pic, updated_at = NOW() WHERE admin_id = :aid"),
+        {'pic': filename, 'aid': admin_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Photo uploaded', 'filename': filename}), 200
+
+
+@admin_bp.route('/profile/remove-photo', methods=['DELETE'])
+@jwt_required()
+@require_admin
+def remove_admin_photo():
+    """Remove admin profile photo"""
+    admin_id = int(get_jwt_identity())
+    
+    old = db.session.execute(
+        text("SELECT profile_picture FROM admins WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    ).first()
+    
+    if old and old[0]:
+        upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'photos')
+        old_path = os.path.join(upload_folder, old[0])
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    
+    db.session.execute(
+        text("UPDATE admins SET profile_picture = NULL, updated_at = NOW() WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Photo removed'}), 200
+
+
+@admin_bp.route('/profile/change-password', methods=['POST'])
+@jwt_required()
+@require_admin
+def change_admin_password():
+    """Change admin password"""
+    admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    
+    if not current_password or not new_password:
+        return jsonify({'error': 'Current and new password are required'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'New password must be at least 6 characters'}), 400
+    
+    # Get current hash
+    result = db.session.execute(
+        text("SELECT password_hash FROM admins WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    ).first()
+    
+    if not result:
+        return jsonify({'error': 'Admin not found'}), 404
+    
+    import bcrypt
+    
+    if not bcrypt.checkpw(current_password.encode('utf-8'), result[0].encode('utf-8')):
+        return jsonify({'error': 'Current password is incorrect'}), 400
+    
+    new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    db.session.execute(
+        text("UPDATE admins SET password_hash = :hash, updated_at = NOW() WHERE admin_id = :aid"),
+        {'hash': new_hash, 'aid': admin_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Password changed successfully'}), 200
+
+
+@admin_bp.route('/profile/deactivate', methods=['POST'])
+@jwt_required()
+@require_admin
+def deactivate_admin_account():
+    """Deactivate own admin account"""
+    admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    password = data.get('password', '')
+    
+    if not password:
+        return jsonify({'error': 'Password required to confirm deactivation'}), 400
+    
+    import bcrypt
+    
+    result = db.session.execute(
+        text("SELECT password_hash FROM admins WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    ).first()
+    
+    if not result:
+        return jsonify({'error': 'Admin not found'}), 404
+    
+    if not bcrypt.checkpw(password.encode('utf-8'), result[0].encode('utf-8')):
+        return jsonify({'error': 'Password is incorrect'}), 400
+    
+    db.session.execute(
+        text("UPDATE admins SET is_active = FALSE, updated_at = NOW() WHERE admin_id = :aid"),
+        {'aid': admin_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Account deactivated. You will be logged out.'}), 200

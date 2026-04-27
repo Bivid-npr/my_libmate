@@ -202,4 +202,10 @@ export const adminAPI = {
   sendAnnouncement: (title, message) => 
     apiRequest('/admin/announcements/send', { method: 'POST', body: JSON.stringify({ title, message }) }),
   deleteAnnouncement: (id) => apiRequest(`/admin/announcements/${id}`, { method: 'DELETE' }),
+  getAdminProfile: () => apiRequest('/admin/profile'),
+  updateAdminProfile: (data) => apiRequest('/admin/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  changeAdminPassword: (currentPassword, newPassword) => 
+    apiRequest('/admin/profile/change-password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  deactivateAdminAccount: (password) => 
+    apiRequest('/admin/profile/deactivate', { method: 'POST', body: JSON.stringify({ password }) }),
 };
