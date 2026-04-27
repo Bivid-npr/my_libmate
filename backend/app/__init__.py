@@ -81,6 +81,12 @@ def create_app(config_class=Config):
     def internal_error(error):
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
+    
+    # Direct smoke alert endpoint (no auth - for IoT device)
+    @app.route('/api/smoke-alert', methods=['POST'])
+    def smoke_alert_public():
+        from .api.admin import receive_smoke_alert
+        return receive_smoke_alert()
 
     base = os.path.dirname(os.path.abspath(__file__))
     for folder in ['uploads/photos', 'uploads/receipts']:

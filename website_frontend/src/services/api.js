@@ -215,4 +215,6 @@ export const adminAPI = {
   getAdmins: () => apiRequest('/admin/admins'),
   createAdmin: (data) => apiRequest('/admin/admins', { method: 'POST', body: JSON.stringify(data) }),
   removeAdmin: (id) => apiRequest(`/admin/admins/${id}`, { method: 'DELETE' }),
+  getSmokeAlerts: () => apiRequest('/admin/smoke-alerts'),
+  resolveSmokeAlert: (id, note) => apiRequest(`/admin/smoke-alerts/${id}/resolve`, { method: 'POST', body: JSON.stringify({ note }) }),
 };

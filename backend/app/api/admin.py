@@ -1455,3 +1455,96 @@ def remove_admin(target_admin_id):
     db.session.commit()
     
     return jsonify({'message': 'Admin deactivated successfully'}), 200
+
+# ============================================================
+# SMOKE ALERTS (IoT Integration)
+# ============================================================
+
+@admin_bp.route('/smoke-alert', methods=['POST'])
+def receive_smoke_alert():
+    """Receive smoke alert from IoT device (no auth - device sends directly)"""
+    data = request.get_json()
+    device_id = request.args.get('device_id', 'esp8266-01')
+    status = data.get('status', '')
+    sensor_value = data.get('sensor_value', 0)
+    
+    if status == 'smoke_detected':
+        # Insert smoke alert record
+        db.session.execute(
+            text("""
+                INSERT INTO smoke_alerts (device_id, sensor_value, threshold_value, status, detected_at)
+                VALUES (:device_id, :sensor_value, :threshold, 'active', NOW())
+            """),
+            {'device_id': device_id, 'sensor_value': sensor_value, 'threshold': 170}
+        )
+        db.session.commit()
+        
+        # Notify all admins
+        title = "Smoke Detected!"
+        message = f"Smoke detected by device '{device_id}'. Sensor reading: {sensor_value}. Immediate attention required."
+        
+        db.session.execute(
+            text("INSERT INTO notifications (type, title, message) VALUES ('smoke_alert', :title, :message)"),
+            {'title': title, 'message': message}
+        )
+        notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
+        
+        db.session.execute(
+            text("INSERT INTO admin_notifications (admin_id, notification_id) SELECT admin_id, :nid FROM admins WHERE is_active = TRUE"),
+            {'nid': notification_id}
+        )
+        db.session.commit()
+        
+        # WebSocket alert to all connected admins
+        from ..api.socket_events import notify_admins_socket
+        notify_admins_socket({
+            'notification_id': notification_id,
+            'type': 'smoke_alert',
+            'title': title,
+            'message': message,
+            'is_read': False
+        })
+        
+        return jsonify({'message': 'Alert received', 'alert_id': notification_id}), 201
+    
+    return jsonify({'message': 'Status received'}), 200
+
+
+@admin_bp.route('/smoke-alerts', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_smoke_alerts():
+    """Get smoke alert history"""
+    admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("""
+            SELECT * FROM smoke_alerts 
+            ORDER BY detected_at DESC 
+            LIMIT 50
+        """)
+    )
+    alerts = [dict(row._mapping) for row in result]
+    return jsonify(alerts), 200
+
+
+@admin_bp.route('/smoke-alerts/<int:alert_id>/resolve', methods=['POST'])
+@jwt_required()
+@require_admin
+def resolve_smoke_alert(alert_id):
+    """Mark a smoke alert as resolved"""
+    admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    db.session.execute(
+        text("""
+            UPDATE smoke_alerts 
+            SET status = 'resolved', resolved_by = :aid, resolved_at = NOW(), 
+                resolution_note = :note
+            WHERE alert_id = :alert_id
+        """),
+        {'aid': admin_id, 'note': data.get('note', 'Resolved by admin'), 'alert_id': alert_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Alert resolved'}), 200
