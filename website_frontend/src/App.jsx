@@ -31,6 +31,7 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminMembershipsPage from './pages/admin/MembershipsPage';
 import AdminBooksPage from './pages/admin/BooksPage';
 import AdminUsersPage from './pages/admin/UsersPage';
+import UserDetailPage from './pages/admin/UserDetailPage';
 import AdminBorrowingsPage from './pages/admin/BorrowingsPage';
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage';
 import AdminSmokeAlertsPage from './pages/admin/SmokeAtertPage';
@@ -164,6 +165,7 @@ function AppContent() {
         <Route path="memberships" element={<AdminMembershipsPage />} />
         <Route path="books" element={<AdminBooksPage />} />
         <Route path="users" element={<AdminUsersPage />} />
+        <Route path="users/:userId" element={<UserDetailPage />} />
         <Route path="borrowings" element={<AdminBorrowingsPage />} />
         <Route path="announcements" element={<AdminAnnouncementsPage />} />
         <Route path="smoke-alerts" element={<AdminSmokeAlertsPage />} />
