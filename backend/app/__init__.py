@@ -1,41 +1,36 @@
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, decode_token
-from flask_socketio import SocketIO, join_room, leave_room
+from flask_socketio import SocketIO, join_room
 from dotenv import load_dotenv
 import os
+import bcrypt
 from datetime import timedelta
-import schedule
-import threading
-import time
+from sqlalchemy import text
 
 from .extensions import db
 from .config import Config
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
-# Create SocketIO instance
 socketio = SocketIO(cors_allowed_origins="*")
+
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
-    
-    # Initialize extensions
+
     db.init_app(app)
     CORS(app, origins=app.config['CORS_ORIGINS'], supports_credentials=True)
     socketio.init_app(app, cors_allowed_origins="*")
-    
-    # Initialize Flask-Mail
+
     from .services.email_service import init_mail
     init_mail(app)
-    
-    # JWT Configuration
+
     app.config["JWT_SECRET_KEY"] = app.config['JWT_SECRET_KEY']
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
-    jwt = JWTManager(app)
-    
-    # Register blueprints
+    JWTManager(app)
+
     from .api.auth import auth_bp
     from .api.books import books_bp
     from .api.users import users_bp
@@ -45,99 +40,75 @@ def create_app(config_class=Config):
     from .api.recommendations import recommendations_bp
     from .api.admin import admin_bp
     from .api.membership import membership_bp
-    
-    app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(books_bp, url_prefix='/api/books')
-    app.register_blueprint(users_bp, url_prefix='/api/users')
-    app.register_blueprint(borrowings_bp, url_prefix='/api/borrowings')
-    app.register_blueprint(trending_bp, url_prefix='/api/trending')
-    app.register_blueprint(new_arrivals_bp, url_prefix='/api/new-arrivals')
-    app.register_blueprint(recommendations_bp, url_prefix='/api/recommendations')
-    app.register_blueprint(admin_bp, url_prefix='/api/admin')
-    app.register_blueprint(membership_bp, url_prefix='/api/membership')
-    
-    # SocketIO Events
+
+    for bp, prefix in [
+        (auth_bp, '/api/auth'), (books_bp, '/api/books'), (users_bp, '/api/users'),
+        (borrowings_bp, '/api/borrowings'), (trending_bp, '/api/trending'),
+        (new_arrivals_bp, '/api/new-arrivals'), (recommendations_bp, '/api/recommendations'),
+        (admin_bp, '/api/admin'), (membership_bp, '/api/membership'),
+    ]:
+        app.register_blueprint(bp, url_prefix=prefix)
+
     @socketio.on('connect')
     def handle_connect():
-        """Handle client connection - join appropriate room based on token"""
         token = request.args.get('token')
         if token:
             try:
                 decoded = decode_token(token)
-                claims = decoded.get('additional_claims', {}) if hasattr(decoded, 'get') else {}
-                identity = decoded.get('sub', '')
-                
-                if claims.get('type') == 'admin' or (isinstance(claims, dict) and claims.get('type') == 'admin'):
-                    join_room('admin_room')
-                    print(f'Admin {identity} connected to socket')
-                elif claims.get('type') == 'user' or (isinstance(claims, dict) and claims.get('type') == 'user'):
-                    join_room(f'user_{identity}')
-                    print(f'User {identity} connected to socket')
-            except Exception as e:
-                print(f'Token decode failed: {e}')
-                join_room('admin_room')  # Fallback
+                claims = decoded.get('additional_claims', {}) or {}
+                room = 'admin_room' if claims.get('type') == 'admin' else f"user_{decoded.get('sub', '')}"
+                join_room(room)
+            except Exception:
+                join_room('guest_room')
         else:
             join_room('guest_room')
-            print('Guest connected to socket')
-    
-    @socketio.on('disconnect')
-    def handle_disconnect():
-        print('Client disconnected from socket')
-    
-    # Serve uploaded files
+
     @app.route('/uploads/<path:filename>')
     def serve_upload(filename):
-        uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-        return send_from_directory(uploads_dir, filename)
-    
+        return send_from_directory(os.path.join(os.path.dirname(__file__), 'uploads'), filename)
+
     @app.route('/uploads/photos/<path:filename>')
     def serve_photo(filename):
-        photos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'photos')
-        os.makedirs(photos_dir, exist_ok=True)
-        return send_from_directory(photos_dir, filename)
-    
-    # Error handlers
+        folder = os.path.join(os.path.dirname(__file__), 'uploads', 'photos')
+        os.makedirs(folder, exist_ok=True)
+        return send_from_directory(folder, filename)
+
     @app.errorhandler(404)
     def not_found(error):
         return jsonify({'error': 'Resource not found'}), 404
-    
+
     @app.errorhandler(500)
     def internal_error(error):
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
-    
-    # Create upload directories if they don't exist
-    with app.app_context():
-        uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'photos')
-        os.makedirs(uploads_dir, exist_ok=True)
-        receipts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'receipts')
-        os.makedirs(receipts_dir, exist_ok=True)
-    
-    # Start background scheduler for periodic tasks
-    def run_scheduler():
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
-    
-    # Schedule tasks (runs in both development and production for testing)
-    from .services.notification_service import NotificationService
-    from .services.email_service import send_due_date_reminder_emails, send_overdue_notice_emails
-    
-    # Notification reminders (in-app)
-    schedule.every().day.at("09:00").do(NotificationService.send_due_date_reminders)
-    schedule.every().day.at("09:00").do(NotificationService.send_overdue_notices)
-    schedule.every().day.at("09:00").do(NotificationService.send_membership_expiry_warnings)
-    
-    # Email reminders
-    schedule.every().day.at("09:00").do(send_due_date_reminder_emails)
-    schedule.every().day.at("09:00").do(send_overdue_notice_emails)
-    
-    if app.config.get('FLASK_ENV') == 'production':
-        from .services.recommendation_service import RecommendationService
-        schedule.every().monday.at("02:00").do(RecommendationService.update_trending_books)
-    
-    # Start scheduler thread
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
-    
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    for folder in ['uploads/photos', 'uploads/receipts']:
+        os.makedirs(os.path.join(base, folder), exist_ok=True)
+
+    _admin_seeded = False
+
+    @app.before_request
+    def seed_default_admin():
+        nonlocal _admin_seeded
+        if _admin_seeded or request.path.startswith('/socket.io'):
+            return
+        _admin_seeded = True
+
+        try:
+            count = db.session.execute(text("SELECT COUNT(*) FROM admins")).first()[0]
+            if count == 0:
+                email = os.getenv('DEFAULT_ADMIN_EMAIL', 'admin@libmate.com')
+                password = os.getenv('DEFAULT_ADMIN_PASSWORD', 'admin123')
+                hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+                db.session.execute(
+                    text("INSERT INTO admins (full_name, email, phone, password_hash, is_active) VALUES (:name, :email, :phone, :hash, TRUE)"),
+                    {'name': 'Super Admin', 'email': email, 'phone': '', 'hash': hashed}
+                )
+                db.session.commit()
+                print(f"[OK] Default admin created: {email}")
+        except Exception as e:
+            print(f"[INFO] Admin seed skipped: {e}")
+
     return app
