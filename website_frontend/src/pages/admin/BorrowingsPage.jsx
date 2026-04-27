@@ -1,12 +1,12 @@
 // src/pages/admin/BorrowingsPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { FaUndo, FaCheck, FaTimes, FaClock, FaBookOpen, FaList, FaArrowLeft } from 'react-icons/fa';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { FaUndo, FaCheck, FaTimes, FaClock, FaBookOpen, FaList, FaArrowLeft, FaSearch } from 'react-icons/fa';
 import { adminAPI, borrowingsAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
 const TableHeader = ({ columns }) => (
   <thead className="bg-[#F3EDE3] border-b border-[#EAE0D0]">
-    <tr>{columns.map((col, i) => <th key={i} className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase">{col}</th>)}</tr>
+    <tr>{columns.map((col, i) => <th key={i} className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase whitespace-nowrap">{col}</th>)}</tr>
   </thead>
 );
 
@@ -33,9 +33,14 @@ const BorrowingsPage = () => {
   const [activeTab, setActiveTab] = useState('borrowings');
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
+  
+  const [searchBorrowings, setSearchBorrowings] = useState('');
+  const [searchPickups, setSearchPickups] = useState('');
+  const [searchQueue, setSearchQueue] = useState('');
+  const [searchRenewals, setSearchRenewals] = useState('');
+  
   const { showToast } = useToast();
 
-  // Fetch ALL data on mount
   const fetchAllData = useCallback(async () => {
     setLoading(true);
     try {
@@ -53,11 +58,6 @@ const BorrowingsPage = () => {
   }, [filter, page, showToast]);
 
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
-
-  // Refetch when tab changes (to refresh data)
-  useEffect(() => {
-    fetchAllData();
-  }, [activeTab]);
 
   const viewBookQueue = async (bookId) => {
     setLoading(true);
@@ -92,7 +92,50 @@ const BorrowingsPage = () => {
   const formatDate = (ds) => ds ? new Date(ds).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
   const formatDateTime = (ds) => ds ? new Date(ds).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A';
 
-  const renewalRequests = borrowings.filter(b => b.renewal_requested && b.renewal_status === 'pending');
+  const renewalRequests = useMemo(() => 
+    borrowings.filter(b => b.renewal_requested && b.renewal_status === 'pending'),
+    [borrowings]
+  );
+
+  const filteredBorrowings = useMemo(() => {
+    if (!searchBorrowings) return borrowings;
+    const term = searchBorrowings.toLowerCase();
+    return borrowings.filter(b =>
+      b.user_name?.toLowerCase().includes(term) ||
+      b.email?.toLowerCase().includes(term) ||
+      b.book_title?.toLowerCase().includes(term) ||
+      b.author?.toLowerCase().includes(term)
+    );
+  }, [borrowings, searchBorrowings]);
+
+  const filteredPickups = useMemo(() => {
+    if (!searchPickups) return reservations;
+    const term = searchPickups.toLowerCase();
+    return reservations.filter(r =>
+      r.full_name?.toLowerCase().includes(term) ||
+      r.email?.toLowerCase().includes(term) ||
+      r.title?.toLowerCase().includes(term)
+    );
+  }, [reservations, searchPickups]);
+
+  const filteredQueue = useMemo(() => {
+    if (!searchQueue) return queueBooks;
+    const term = searchQueue.toLowerCase();
+    return queueBooks.filter(b =>
+      b.title?.toLowerCase().includes(term) ||
+      b.author?.toLowerCase().includes(term)
+    );
+  }, [queueBooks, searchQueue]);
+
+  const filteredRenewals = useMemo(() => {
+    if (!searchRenewals) return renewalRequests;
+    const term = searchRenewals.toLowerCase();
+    return renewalRequests.filter(b =>
+      b.user_name?.toLowerCase().includes(term) ||
+      b.email?.toLowerCase().includes(term) ||
+      b.book_title?.toLowerCase().includes(term)
+    );
+  }, [renewalRequests, searchRenewals]);
 
   const tabs = [
     { id: 'borrowings', label: 'Active Borrowings', icon: FaBookOpen, count: borrowings.length },
@@ -108,6 +151,7 @@ const BorrowingsPage = () => {
         <p className="text-[#9A8478] mt-1">Track borrowings, process pickups, manage queue, and handle renewals</p>
       </div>
 
+      {/* Tabs */}
       <div className="flex gap-1 border-b border-[#EAE0D0] mb-6 overflow-x-auto">
         {tabs.map((tab) => (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id); setViewingQueue(false); setPage(1); }}
@@ -117,25 +161,104 @@ const BorrowingsPage = () => {
         ))}
       </div>
 
-      {activeTab === 'borrowings' && (
-        <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">
-          <div className="flex gap-2 flex-wrap">
-            {['all', 'borrowed', 'overdue', 'returned'].map((f) => (
-              <button key={f} onClick={() => { setFilter(f); setPage(1); }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium capitalize ${filter === f ? 'bg-[#C4895A] text-white' : 'bg-[#F3EDE3] text-[#4A3728] hover:bg-[#EAE0D0]'}`}>{f}</button>
-            ))}
+      {/* Search bars - ALWAYS RENDERED to prevent focus loss */}
+      <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">
+        {/* Active Borrowings search + filters */}
+        {activeTab === 'borrowings' && (
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+            <div className="relative flex-1 max-w-md">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+              <input
+                type="text"
+                placeholder="Search by member, email, or book..."
+                value={searchBorrowings}
+                onChange={(e) => setSearchBorrowings(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
+              />
+              {searchBorrowings && (
+                <button onClick={() => setSearchBorrowings('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]">
+                  <FaTimes size={12} />
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {['all', 'borrowed', 'overdue', 'returned'].map((f) => (
+                <button key={f} onClick={() => { setFilter(f); setPage(1); }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition whitespace-nowrap ${filter === f ? 'bg-[#C4895A] text-white' : 'bg-[#F3EDE3] text-[#4A3728] hover:bg-[#EAE0D0]'}`}>{f}</button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
+        {/* Pickups search */}
+        {activeTab === 'pickups' && (
+          <div className="relative max-w-md">
+            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+            <input
+              type="text"
+              placeholder="Search by member name, email, or book title..."
+              value={searchPickups}
+              onChange={(e) => setSearchPickups(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
+            />
+            {searchPickups && (
+              <button onClick={() => setSearchPickups('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]">
+                <FaTimes size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Queue search */}
+        {activeTab === 'queue' && !viewingQueue && (
+          <div className="relative max-w-md">
+            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+            <input
+              type="text"
+              placeholder="Search by book title or author..."
+              value={searchQueue}
+              onChange={(e) => setSearchQueue(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
+            />
+            {searchQueue && (
+              <button onClick={() => setSearchQueue('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]">
+                <FaTimes size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Renewals search */}
+        {activeTab === 'renewals' && (
+          <div className="relative max-w-md">
+            <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+            <input
+              type="text"
+              placeholder="Search by member name, email, or book..."
+              value={searchRenewals}
+              onChange={(e) => setSearchRenewals(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
+            />
+            {searchRenewals && (
+              <button onClick={() => setSearchRenewals('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]">
+                <FaTimes size={12} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ========== ACTIVE BORROWINGS ========== */}
       {activeTab === 'borrowings' && (
         <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] overflow-hidden">
-          {loading ? <Spinner /> : borrowings.length === 0 ? <EmptyState icon={FaBookOpen} message="No borrowings found" /> : (
+          {loading ? <Spinner /> : filteredBorrowings.length === 0 ? (
+            <EmptyState icon={FaBookOpen} message={searchBorrowings ? "No borrowings match your search" : "No borrowings found"} />
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <TableHeader columns={['Member', 'Book', 'Issued', 'Due', 'Status', 'Renewals', 'Actions']} />
                 <tbody className="divide-y divide-[#EAE0D0]">
-                  {borrowings.map((b) => (
+                  {filteredBorrowings.map((b) => (
                     <tr key={b.borrow_id} className="hover:bg-[#FAF7F2] transition">
                       <td className="py-3 px-4"><div className="font-medium text-[#2C1F14]">{b.user_name}</div><div className="text-xs text-[#9A8478]">{b.email}</div></td>
                       <td className="py-3 px-4 text-[#2C1F14]">{b.book_title}</td>
@@ -160,14 +283,17 @@ const BorrowingsPage = () => {
         </div>
       )}
 
+      {/* ========== PENDING PICKUPS ========== */}
       {activeTab === 'pickups' && (
         <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] overflow-hidden">
-          {loading ? <Spinner /> : reservations.length === 0 ? <EmptyState icon={FaClock} message="No pending pickup reservations" /> : (
+          {loading ? <Spinner /> : filteredPickups.length === 0 ? (
+            <EmptyState icon={FaClock} message={searchPickups ? "No pickups match your search" : "No pending pickup reservations"} />
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <TableHeader columns={['Member', 'Book', 'Reserved', 'Expires', 'Time Left', 'Actions']} />
                 <tbody className="divide-y divide-[#EAE0D0]">
-                  {reservations.map((res) => {
+                  {filteredPickups.map((res) => {
                     const expiresAt = res.expires_at ? new Date(res.expires_at) : null;
                     const timeLeft = expiresAt ? Math.max(0, Math.floor((expiresAt - new Date()) / 3600000)) : null;
                     return (
@@ -190,6 +316,7 @@ const BorrowingsPage = () => {
         </div>
       )}
 
+      {/* ========== RESERVATION QUEUE ========== */}
       {activeTab === 'queue' && (
         <div>
           {viewingQueue && selectedBookQueue ? (
@@ -207,18 +334,21 @@ const BorrowingsPage = () => {
             </div>
           ) : (
             <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] overflow-hidden">
-              {loading ? <Spinner /> : queueBooks.length === 0 ? <EmptyState icon={FaList} message="No books with pending reservations" /> : (
+              {loading ? <Spinner /> : filteredQueue.length === 0 ? (
+                <EmptyState icon={FaList} message={searchQueue ? "No books match your search" : "No books with pending reservations"} />
+              ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <TableHeader columns={['Book', 'Author', 'Available', 'Queue', 'First Reserved', 'Actions']} />
                     <tbody className="divide-y divide-[#EAE0D0]">
-                      {queueBooks.map((book) => (
+                      {filteredQueue.map((book) => (
                         <tr key={book.book_id} className="hover:bg-[#FAF7F2] transition cursor-pointer" onClick={() => viewBookQueue(book.book_id)}>
-                          <td className="py-3 px-4 font-medium text-[#2C1F14]">{book.title}</td><td className="py-3 px-4 text-[#4A3728] text-sm">{book.author}</td>
+                          <td className="py-3 px-4 font-medium text-[#2C1F14]">{book.title}</td>
+                          <td className="py-3 px-4 text-[#4A3728] text-sm">{book.author}</td>
                           <td className="py-3 px-4"><span className={`text-xs px-2 py-1 rounded-full ${book.available_copies > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{book.available_copies}/{book.total_copies}</span></td>
                           <td className="py-3 px-4 text-center font-medium text-[#C4895A]">{book.queue_count}</td>
                           <td className="py-3 px-4 text-[#4A3728] text-sm">{new Date(book.earliest_reservation).toLocaleDateString()}</td>
-                          <td className="py-3 px-4"><button onClick={(e) => { e.stopPropagation(); viewBookQueue(book.book_id); }} className="text-[#C4895A] hover:underline text-sm">View Queue →</button></td>
+                          <td className="py-3 px-4"><button onClick={(e) => { e.stopPropagation(); viewBookQueue(book.book_id); }} className="text-[#C4895A] hover:underline text-sm">View Queue</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -230,14 +360,17 @@ const BorrowingsPage = () => {
         </div>
       )}
 
+      {/* ========== RENEWAL REQUESTS ========== */}
       {activeTab === 'renewals' && (
         <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] overflow-hidden">
-          {loading ? <Spinner /> : renewalRequests.length === 0 ? <EmptyState icon={FaUndo} message="No pending renewal requests" /> : (
+          {loading ? <Spinner /> : filteredRenewals.length === 0 ? (
+            <EmptyState icon={FaUndo} message={searchRenewals ? "No renewals match your search" : "No pending renewal requests"} />
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <TableHeader columns={['Member', 'Book', 'Due Date', 'Renewals', 'Actions']} />
                 <tbody className="divide-y divide-[#EAE0D0]">
-                  {renewalRequests.map((b) => (
+                  {filteredRenewals.map((b) => (
                     <tr key={b.borrow_id} className="hover:bg-[#FAF7F2] transition">
                       <td className="py-3 px-4"><div className="font-medium text-[#2C1F14]">{b.user_name}</div><div className="text-xs text-[#9A8478]">{b.email}</div></td>
                       <td className="py-3 px-4 text-[#2C1F14]">{b.book_title}</td>
