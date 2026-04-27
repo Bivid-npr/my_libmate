@@ -4,8 +4,30 @@ from sqlalchemy import text
 from datetime import datetime, date, timedelta
 from ..extensions import db
 from ..utils.auth_utils import require_user
+from ..api.socket_events import notify_admins_socket  # ADD THIS
 
 borrowings_bp = Blueprint('borrowings', __name__)
+
+
+def _notify_admins(title, message, notification_type='book_request'):
+    """Helper: Send notification to all active admins (DB + WebSocket)"""
+    db.session.execute(
+        text("INSERT INTO notifications (type, title, message) VALUES (:type, :title, :message)"),
+        {'type': notification_type, 'title': title, 'message': message}
+    )
+    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
+    
+    db.session.execute(
+        text("INSERT INTO admin_notifications (admin_id, notification_id) SELECT admin_id, :nid FROM admins WHERE is_active = TRUE"),
+        {'nid': notification_id}
+    )
+    
+    # Send real-time WebSocket notification
+    notify_admins_socket({
+        'title': title,
+        'message': message,
+        'type': notification_type
+    })
 
 
 @borrowings_bp.route('', methods=['GET'])
@@ -62,7 +84,7 @@ def get_borrow_history():
 @jwt_required()
 @require_user
 def request_pickup(book_id):
-    """Creates 48-hour pickup reservation"""
+    """Creates 48-hour pickup reservation and notifies admins via WebSocket"""
     user_id = int(get_jwt_identity())
     
     membership = db.session.execute(
@@ -112,6 +134,19 @@ def request_pickup(book_id):
         text("UPDATE books SET available_copies = available_copies - 1 WHERE book_id = :bid AND available_copies > 0"),
         {'bid': book_id}
     )
+    
+    # Notify admins about new pickup (DB + WebSocket)
+    user_info = db.session.execute(
+        text("SELECT full_name FROM users WHERE user_id = :uid"),
+        {'uid': user_id}
+    ).first()
+    
+    _notify_admins(
+        'New Pickup Reservation',
+        f"{user_info[0]} has reserved '{book_data['title']}' for pickup. Expires in 48 hours.",
+        'book_request'
+    )
+    
     db.session.commit()
     
     return jsonify({
@@ -124,7 +159,7 @@ def request_pickup(book_id):
 @jwt_required()
 @require_user
 def request_renewal(borrow_id):
-    """Request renewal for a borrowed book"""
+    """Request renewal for a borrowed book and notify admins via WebSocket"""
     user_id = int(get_jwt_identity())
     
     result = db.session.execute(
@@ -152,6 +187,23 @@ def request_renewal(borrow_id):
         text("UPDATE borrowings SET renewal_requested = TRUE, renewal_status = 'pending', updated_at = NOW() WHERE borrow_id = :bid"),
         {'bid': borrow_id}
     )
+    
+    # Notify admins about renewal request (DB + WebSocket)
+    user_info = db.session.execute(
+        text("SELECT full_name FROM users WHERE user_id = :uid"),
+        {'uid': user_id}
+    ).first()
+    book_info = db.session.execute(
+        text("SELECT title FROM books WHERE book_id = :bid"),
+        {'bid': borrow['book_id']}
+    ).first()
+    
+    _notify_admins(
+        'Renewal Request',
+        f"{user_info[0]} requested renewal for '{book_info[0]}'.",
+        'renewal_request'
+    )
+    
     db.session.commit()
     return jsonify({'message': 'Renewal request submitted successfully'}), 200
 
@@ -268,7 +320,6 @@ def reserve_book(book_id):
 @borrowings_bp.route('/reservations/all', methods=['GET'])
 @jwt_required()
 def get_all_reservations():
-    """Get all pending reservations (admin view)"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -290,7 +341,6 @@ def get_all_reservations():
 @borrowings_bp.route('/reservations/queue', methods=['GET'])
 @jwt_required()
 def get_reservation_queue():
-    """Get all books with pending reservations (admin view)"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -315,7 +365,6 @@ def get_reservation_queue():
 @borrowings_bp.route('/reservations/queue/<int:book_id>', methods=['GET'])
 @jwt_required()
 def get_book_reservation_queue(book_id):
-    """Get all users in the reservation queue for a specific book (admin view)"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -335,10 +384,8 @@ def get_book_reservation_queue(book_id):
     return jsonify(queue), 200
 
 
-# ADDED: Public endpoint for book detail page
 @borrowings_bp.route('/reservations/book/<int:book_id>', methods=['GET'])
 def get_book_reservations_public(book_id):
-    """Get reservation queue for a book (public - no auth required)"""
     result = db.session.execute(
         text("""
             SELECT r.reservation_id, r.user_id, r.reserved_at, r.status,
@@ -359,7 +406,6 @@ def get_book_reservations_public(book_id):
 @jwt_required()
 @require_user
 def get_my_reservations():
-    """Get current user's reservations"""
     user_id = int(get_jwt_identity())
     
     result = db.session.execute(
@@ -380,7 +426,6 @@ def get_my_reservations():
 @jwt_required()
 @require_user
 def cancel_reservation(reservation_id):
-    """Cancel a reservation and restore book copy"""
     user_id = int(get_jwt_identity())
     
     reservation = db.session.execute(

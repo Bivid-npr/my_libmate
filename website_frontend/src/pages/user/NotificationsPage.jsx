@@ -2,15 +2,34 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { FaBell, FaBook, FaCheck, FaTimes, FaClock, FaExclamationTriangle } from 'react-icons/fa';
+import { io } from 'socket.io-client';
 import { usersAPI } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 
 const NotificationsPage = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const { showToast } = useToast();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (isAuthenticated) fetchNotifications();
+    if (isAuthenticated) {
+      fetchNotifications();
+      
+      // Connect to WebSocket with token for user identification
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const socket = io('http://localhost:5000', {
+        query: { token }
+      });
+      
+      socket.on('user_notification', (data) => {
+        setNotifications(prev => [data, ...prev]);
+        showToast(data.message || data.title, 'info');
+        window.dispatchEvent(new Event('notification-read'));
+      });
+      
+      return () => socket.disconnect();
+    }
   }, [isAuthenticated]);
 
   const fetchNotifications = async () => {
@@ -26,6 +45,7 @@ const NotificationsPage = () => {
     try {
       await usersAPI.markNotificationRead(notificationId);
       setNotifications(prev => prev.map(n => n.notification_id === notificationId ? { ...n, is_read: true } : n));
+      window.dispatchEvent(new Event('notification-read'));
     } catch (error) { console.error('Error marking notification as read:', error); }
   };
 
@@ -33,6 +53,7 @@ const NotificationsPage = () => {
     try {
       await usersAPI.markAllNotificationsRead();
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      window.dispatchEvent(new Event('notification-read'));
     } catch (error) { console.error('Error marking all as read:', error); }
   };
 

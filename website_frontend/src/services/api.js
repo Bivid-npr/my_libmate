@@ -14,6 +14,8 @@ const clearAuthData = () => {
   });
 };
 
+// src/services/api.js - Update the apiRequest function
+
 export const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   const headers = { 'Content-Type': 'application/json' };
@@ -23,7 +25,16 @@ export const apiRequest = async (endpoint, options = {}) => {
   
   try {
     const response = await fetch(url, { headers, ...options });
-    const data = await response.json();
+    
+    // Try to parse response as JSON
+    let data;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      throw new Error(`Server error: ${response.status}`);
+    }
     
     if (response.status === 401) {
       if (isAuthEndpoint(endpoint)) throw new Error(data.error || 'Invalid credentials');
@@ -34,7 +45,12 @@ export const apiRequest = async (endpoint, options = {}) => {
       throw new Error('Session expired. Please login again.');
     }
     
-    if (!response.ok) throw new Error(data.error || 'Something went wrong');
+    if (!response.ok) {
+      // Extract the actual error message
+      const errorMsg = data.error || data.message || data.msg || 'Something went wrong';
+      throw new Error(errorMsg);
+    }
+    
     return data;
   } catch (error) {
     if (!isAuthEndpoint(endpoint)) console.error('API Error:', error);
@@ -167,4 +183,7 @@ export const adminAPI = {
   approveBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/approve`, { method: 'POST' }),
   rejectBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/reject`, { method: 'POST' }),
   confirmPickup: (reservationId) => apiRequest(`/admin/borrowings/confirm-pickup/${reservationId}`, { method: 'POST' }),
+  getNotifications: () => apiRequest('/admin/notifications'),
+  markNotificationRead: (id) => apiRequest(`/admin/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => apiRequest('/admin/notifications/read-all', { method: 'POST' }),
 };

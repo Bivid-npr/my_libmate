@@ -720,20 +720,147 @@ def confirm_pickup(reservation_id):
     """Admin confirms user has arrived to pick up reserved book"""
     admin_id = int(get_jwt_identity())
     
-    reservation = db.session.execute(
-        text("SELECT * FROM reservations WHERE reservation_id = :rid AND status = 'pending'"),
-        {'rid': reservation_id}
-    ).first()
-    if not reservation:
-        return jsonify({'error': 'Reservation not found or already processed'}), 404
+    try:
+        reservation = db.session.execute(
+            text("SELECT * FROM reservations WHERE reservation_id = :rid AND status = 'pending'"),
+            {'rid': reservation_id}
+        ).first()
+        
+        if not reservation:
+            return jsonify({'error': 'Reservation not found or already processed'}), 404
+        
+        res = dict(reservation._mapping)
+        
+        # Check membership BEFORE inserting (gives better error)
+        has_membership = db.session.execute(
+            text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active' AND expiry_date > CURDATE()"),
+            {'uid': res['user_id']}
+        ).first()
+        
+        if not has_membership:
+            return jsonify({
+                'error': 'Membership required',
+                'message': 'User does not have an active membership. They need to purchase a membership first.'
+            }), 400
+        
+        # Check borrow limit BEFORE inserting (gives better error)
+        active_borrows = db.session.execute(
+            text("SELECT COUNT(*) FROM borrowings WHERE user_id = :uid AND status NOT IN ('returned', 'lost')"),
+            {'uid': res['user_id']}
+        ).first()[0]
+        
+        if active_borrows >= 5:
+            return jsonify({
+                'error': 'Borrow limit reached',
+                'message': f'User already has {active_borrows}/5 books borrowed. They must return at least one book first.'
+            }), 400
+        
+        # Check if they already have this book
+        already_have = db.session.execute(
+            text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned', 'lost')"),
+            {'uid': res['user_id'], 'bid': res['book_id']}
+        ).first()
+        
+        if already_have:
+            return jsonify({
+                'error': 'Already borrowed',
+                'message': 'This user already has this book borrowed.'
+            }), 400
+        
+        due_date = date.today() + timedelta(days=14)
+        
+        db.session.execute(
+            text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
+            {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
+        )
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Book issued successfully!',
+            'due_date': due_date.isoformat(),
+            'borrows_remaining': 5 - (active_borrows + 1)
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        error_msg = str(e)
+        print(f"Confirm pickup error: {error_msg}")
+        
+        # Map trigger messages to user-friendly responses
+        if 'maximum simultaneous borrow limit' in error_msg or 'max' in error_msg.lower() and 'borrow' in error_msg.lower():
+            return jsonify({
+                'error': 'Borrow limit reached',
+                'message': 'User has reached the maximum of 5 borrowed books.'
+            }), 400
+        elif 'no active membership' in error_msg or 'membership' in error_msg.lower():
+            return jsonify({
+                'error': 'Membership required',
+                'message': 'User does not have an active membership.'
+            }), 400
+        elif 'no available copies' in error_msg or 'available' in error_msg.lower():
+            return jsonify({
+                'error': 'No copies available',
+                'message': 'This book has no available copies.'
+            }), 400
+        elif 'already have' in error_msg.lower() or 'duplicate' in error_msg.lower():
+            return jsonify({
+                'error': 'Already borrowed',
+                'message': 'User already has this book.'
+            }), 400
+        else:
+            return jsonify({
+                'error': 'Failed to issue book',
+                'message': error_msg
+            }), 500
     
-    res = dict(reservation._mapping)
-    due_date = date.today() + timedelta(days=14)
+
+@admin_bp.route('/notifications', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_admin_notifications():
+    """Get admin notifications"""
+    admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("""
+            SELECT n.*, an.is_read, an.read_at
+            FROM notifications n
+            JOIN admin_notifications an ON n.notification_id = an.notification_id
+            WHERE an.admin_id = :aid
+            ORDER BY n.created_at DESC
+            LIMIT 50
+        """),
+        {'aid': admin_id}
+    )
+    notifications = [dict(row._mapping) for row in result]
+    return jsonify(notifications), 200
+
+
+@admin_bp.route('/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required()
+@require_admin
+def mark_admin_notification_read(notification_id):
+    """Mark admin notification as read"""
+    admin_id = int(get_jwt_identity())
     
     db.session.execute(
-        text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
-        {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
+        text("UPDATE admin_notifications SET is_read = TRUE, read_at = NOW() WHERE admin_id = :aid AND notification_id = :nid"),
+        {'aid': admin_id, 'nid': notification_id}
     )
     db.session.commit()
+    return jsonify({'message': 'Marked as read'}), 200
+
+
+@admin_bp.route('/notifications/read-all', methods=['POST'])
+@jwt_required()
+@require_admin
+def mark_all_admin_notifications_read():
+    """Mark all admin notifications as read"""
+    admin_id = int(get_jwt_identity())
     
-    return jsonify({'message': 'Book issued successfully!', 'due_date': due_date.isoformat()}), 201
+    db.session.execute(
+        text("UPDATE admin_notifications SET is_read = TRUE, read_at = NOW() WHERE admin_id = :aid AND is_read = FALSE"),
+        {'aid': admin_id}
+    )
+    db.session.commit()
+    return jsonify({'message': 'All marked as read'}), 200

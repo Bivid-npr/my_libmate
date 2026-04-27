@@ -96,7 +96,10 @@ const BookDetailPage = () => {
       const result = await borrowingsAPI.borrowBook(bookId);
       showToast(result.message || 'Book reserved for pickup! Visit the library within 48 hours.', 'success');
       fetchAllData();
-    } catch (err) { showToast(err.message || 'Failed to reserve book', 'error'); }
+    } catch (err) {
+      // Show the actual error message from the API
+      showToast(err.message || 'Failed to reserve book', 'error');
+    }
     finally { setBorrowing(false); }
   };
 
@@ -211,19 +214,19 @@ const BookDetailPage = () => {
             </div>
 
             <div className="space-y-2 w-full">
-              {isCurrentlyBorrowing ? (
-                <div className="w-full text-center py-2.5 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-200">
-                  <FaBookOpen size={14} className="inline mr-2" />You are currently borrowing this book
-                </div>
-              ) : availableCopies > 0 ? (
-                <button onClick={handleBorrow} disabled={borrowing} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition text-sm font-medium disabled:opacity-50">
-                  <FaBookOpen size={14} />{borrowing ? 'Processing...' : 'Reserve for Pickup'}
-                </button>
-              ) : (
-                <button onClick={handleReserve} disabled={reserving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium disabled:opacity-50">
-                  {reserving ? 'Processing...' : 'Join Waitlist'}
-                </button>
-              )}
+               {isCurrentlyBorrowing ? (
+                  <div className="w-full text-center py-2.5 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-200">
+                    <FaBookOpen size={14} className="inline mr-2" />You are currently borrowing this book
+                  </div>
+                ) : availableCopies > 0 ? (
+                  <button onClick={handleBorrow} disabled={borrowing} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition text-sm font-medium disabled:opacity-50">
+                    <FaBookOpen size={14} />{borrowing ? 'Processing...' : 'Reserve for Pickup'}
+                  </button>
+                ) : (
+                  <button onClick={handleReserve} disabled={reserving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium disabled:opacity-50">
+                    {reserving ? 'Processing...' : 'Join Waitlist'}
+                  </button>
+                )}
               <button onClick={handleWishlistToggle} className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg transition text-sm font-medium ${isWishlisted ? 'border-red-500 text-red-500 bg-red-50' : 'border-[#EAE0D0] text-[#4A3728] hover:border-[#C4895A] hover:text-[#C4895A]'}`}>
                 {isWishlisted ? <FaHeart size={14} /> : <FaRegHeart size={14} />}{isWishlisted ? 'In Wishlist' : 'Add to Wishlist'}
               </button>
