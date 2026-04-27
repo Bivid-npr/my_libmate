@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { FaStar, FaRegStar, FaHeart, FaRegHeart, FaBookOpen, FaShare, FaStarHalfAlt, FaUsers, FaEdit, FaTrash, FaClock, FaUser, FaCalendarAlt } from 'react-icons/fa';
+import { FaStar, FaRegStar, FaHeart, FaRegHeart, FaBookOpen, FaShare, FaStarHalfAlt, FaUsers, FaEdit, FaTrash, FaClock, FaUser, FaCalendarAlt, FaArrowLeft, FaExclamationTriangle, FaArchive } from 'react-icons/fa';
 import { booksAPI, usersAPI, borrowingsAPI } from '../../services/api';
 
 const BookDetailPage = () => {
@@ -15,6 +15,7 @@ const BookDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [isCurrentlyBorrowing, setIsCurrentlyBorrowing] = useState(false);
+  const [userBorrowCount, setUserBorrowCount] = useState(0);
   const [reviewText, setReviewText] = useState('');
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -23,21 +24,21 @@ const BookDetailPage = () => {
   const [userReview, setUserReview] = useState(null);
   const [editingReview, setEditingReview] = useState(false);
   const [reservations, setReservations] = useState([]);
-  const [reservationsLoading, setReservationsLoading] = useState(false);
   const [borrowing, setBorrowing] = useState(false);
   const [reserving, setReserving] = useState(false);
   const [error, setError] = useState(null);
   const [showPickupModal, setShowPickupModal] = useState(false);
 
   const bookId = parseInt(id);
+  const isAdmin = user?.role === 'admin';
+  const maxBorrowLimit = 5;
+  const hasReachedLimit = userBorrowCount >= maxBorrowLimit;
 
-  // Fetch all data on load
   const fetchAllData = useCallback(async () => {
     if (!bookId) return;
     setLoading(true);
     setError(null);
     try {
-      // Fetch book details, reviews, user data, and reservations in parallel
       const [bookResponse, reservationsData] = await Promise.all([
         booksAPI.getBook(bookId),
         borrowingsAPI.getBookReservationsPublic(bookId).catch(() => [])
@@ -47,7 +48,7 @@ const BookDetailPage = () => {
       setReviews(bookResponse.reviews || []);
       setReservations(reservationsData || []);
       
-      if (isAuthenticated && user) {
+      if (isAuthenticated && user && !isAdmin) {
         const userRev = bookResponse.reviews?.find(r => r.user_id === user.user_id);
         if (userRev) { setUserReview(userRev); setRating(userRev.rating); setReviewText(userRev.review_text); }
         
@@ -58,6 +59,7 @@ const BookDetailPage = () => {
           ]);
           setIsWishlisted(wishlist.some(item => item.book_id === bookId));
           setIsCurrentlyBorrowing(borrowings.some(b => b.book_id === bookId));
+          setUserBorrowCount(borrowings.length || 0);
         } catch (err) { console.error('Error fetching user data:', err); }
       }
     } catch (err) {
@@ -65,7 +67,7 @@ const BookDetailPage = () => {
       setError(err.message || 'Failed to load book details');
       showToast('Failed to load book details', 'error');
     } finally { setLoading(false); }
-  }, [bookId, isAuthenticated, user, showToast]);
+  }, [bookId, isAuthenticated, user, isAdmin, showToast]);
 
   useEffect(() => { fetchAllData(); }, [fetchAllData]);
 
@@ -75,17 +77,23 @@ const BookDetailPage = () => {
 
   const handleWishlistToggle = useCallback(async () => {
     if (!isAuthenticated) { showToast('Please log in to add to wishlist', 'error'); return; }
+    if (isAdmin) { showToast('Admins cannot manage wishlists', 'error'); return; }
     try {
       if (isWishlisted) { await usersAPI.removeFromWishlist(bookId); showToast('Removed from wishlist', 'success'); }
       else { await usersAPI.addToWishlist(bookId); showToast('Added to wishlist', 'success'); }
       setIsWishlisted(!isWishlisted);
     } catch (err) { showToast(err.message || 'Failed to update wishlist', 'error'); }
-  }, [isAuthenticated, isWishlisted, bookId, showToast]);
+  }, [isAuthenticated, isAdmin, isWishlisted, bookId, showToast]);
 
   const handleBorrow = () => {
     if (!isAuthenticated) { showToast('Please log in to borrow books', 'error'); return; }
+    if (isAdmin) { showToast('Admins cannot borrow books', 'error'); return; }
     if (user?.role === 'guest') { showToast('Please become a member to borrow books', 'error'); return; }
     if (availableCopies === 0) { showToast('This book is currently unavailable. You can join the waitlist.', 'error'); return; }
+    if (hasReachedLimit) { 
+      showToast(`You have reached your borrowing limit (${maxBorrowLimit}/${maxBorrowLimit}). Please return a book first.`, 'error'); 
+      return; 
+    }
     setShowPickupModal(true);
   };
 
@@ -97,7 +105,6 @@ const BookDetailPage = () => {
       showToast(result.message || 'Book reserved for pickup! Visit the library within 48 hours.', 'success');
       fetchAllData();
     } catch (err) {
-      // Show the actual error message from the API
       showToast(err.message || 'Failed to reserve book', 'error');
     }
     finally { setBorrowing(false); }
@@ -105,7 +112,12 @@ const BookDetailPage = () => {
 
   const handleReserve = async () => {
     if (!isAuthenticated) { showToast('Please log in to reserve books', 'error'); return; }
+    if (isAdmin) { showToast('Admins cannot reserve books', 'error'); return; }
     if (user?.role === 'guest') { showToast('Please become a member to reserve books', 'error'); return; }
+    if (hasReachedLimit) { 
+      showToast(`You have reached your borrowing limit (${maxBorrowLimit}/${maxBorrowLimit}). Please return a book first.`, 'error'); 
+      return; 
+    }
     setReserving(true);
     try {
       await borrowingsAPI.reserveBook(bookId);
@@ -124,6 +136,7 @@ const BookDetailPage = () => {
   const handleReviewSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!isAuthenticated) { showToast('Please log in to leave a review', 'error'); return; }
+    if (isAdmin) { showToast('Admins cannot leave reviews', 'error'); return; }
     if (rating === 0) { showToast('Please select a rating', 'error'); return; }
     if (!reviewText.trim()) { showToast('Please write your review', 'error'); return; }
     setSubmitting(true);
@@ -143,7 +156,7 @@ const BookDetailPage = () => {
       setEditingReview(false);
     } catch (err) { showToast(err.message || 'Failed to submit review', 'error'); }
     finally { setSubmitting(false); }
-  }, [isAuthenticated, rating, reviewText, editingReview, userReview, bookId, user?.user_id, showToast]);
+  }, [isAuthenticated, isAdmin, rating, reviewText, editingReview, userReview, bookId, user?.user_id, showToast]);
 
   const handleEditReview = useCallback(() => {
     if (userReview) { setRating(userReview.rating); setReviewText(userReview.review_text); setEditingReview(true); }
@@ -170,6 +183,7 @@ const BookDetailPage = () => {
   const availableCopies = book?.available_copies ? parseInt(book.available_copies) : 0;
   const totalCopies = book?.total_copies ? parseInt(book.total_copies) : 0;
   const borrowCount = book?.total_borrow_count ? parseInt(book.total_borrow_count) : 0;
+  const isArchived = book?.is_archived || false;
 
   if (loading) {
     return (
@@ -190,7 +204,13 @@ const BookDetailPage = () => {
   if (!book) {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
-        <div className="text-center"><div className="text-6xl mb-4">📚</div><h2 className="font-serif text-2xl font-bold text-[#2C1F14] mb-2">Book Not Found</h2><p className="text-[#9A8478] mb-6">The book you're looking for doesn't exist.</p><Link to="/catalogue" className="inline-flex items-center gap-2 px-6 py-2 bg-[#2C1F14] text-white rounded-full hover:bg-[#4A3728] transition">Back to Catalogue</Link></div>
+        <div className="text-center"><div className="text-6xl mb-4">📚</div><h2 className="font-serif text-2xl font-bold text-[#2C1F14] mb-2">Book Not Found</h2><p className="text-[#9A8478] mb-6">The book you're looking for doesn't exist or has been archived.</p>
+          {isAdmin ? (
+            <Link to="/admin/books" className="inline-flex items-center gap-2 px-6 py-2 bg-[#2C1F14] text-white rounded-full hover:bg-[#4A3728] transition">Back to Manage Books</Link>
+          ) : (
+            <Link to="/catalogue" className="inline-flex items-center gap-2 px-6 py-2 bg-[#2C1F14] text-white rounded-full hover:bg-[#4A3728] transition">Back to Catalogue</Link>
+          )}
+        </div>
       </div>
     );
   }
@@ -198,10 +218,42 @@ const BookDetailPage = () => {
   return (
     <div className="bg-[#FAF7F2] min-h-screen py-16">
       <div className="container mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-40">
+        
+        {/* Admin back link + archived badge */}
+        {isAdmin && (
+          <div className="mb-4 flex items-center gap-3">
+            <Link 
+              to="/admin/books" 
+              className="inline-flex items-center gap-1.5 text-sm text-[#C4895A] hover:text-[#D4A574] transition font-medium"
+            >
+              <FaArrowLeft size={12} /> Back to Manage Books
+            </Link>
+          </div>
+        )}
+
+        {/* Archived warning for non-admins */}
+        {isArchived && !isAdmin && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+            <FaExclamationTriangle className="text-red-500 mt-0.5 flex-shrink-0" size={14} />
+            <p className="text-sm text-red-700">This book has been archived and is no longer available for borrowing.</p>
+          </div>
+        )}
+
+        {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-[#9A8478] mb-8">
-          <Link to="/" className="hover:text-[#C4895A] transition">Home</Link><span>/</span>
-          <Link to="/catalogue" className="hover:text-[#C4895A] transition">Catalogue</Link><span>/</span>
-          <span className="text-[#C4895A]">{book.title}</span>
+          {isAdmin ? (
+            <>
+              <Link to="/admin" className="hover:text-[#C4895A] transition">Admin</Link><span>/</span>
+              <Link to="/admin/books" className="hover:text-[#C4895A] transition">Manage Books</Link><span>/</span>
+              <span className="text-[#C4895A]">{book.title}</span>
+            </>
+          ) : (
+            <>
+              <Link to="/" className="hover:text-[#C4895A] transition">Home</Link><span>/</span>
+              <Link to="/catalogue" className="hover:text-[#C4895A] transition">Catalogue</Link><span>/</span>
+              <span className="text-[#C4895A]">{book.title}</span>
+            </>
+          )}
         </nav>
 
         <div className="flex flex-col lg:flex-row gap-8">
@@ -213,24 +265,48 @@ const BookDetailPage = () => {
               <div className="relative z-10"><h1 className="font-serif text-base font-bold text-white mb-0.5 line-clamp-2">{book.title}</h1><p className="text-white/80 text-[10px]">by {book.author}</p></div>
             </div>
 
-            <div className="space-y-2 w-full">
-               {isCurrentlyBorrowing ? (
+            {/* Action Buttons - Only for non-admin users */}
+            {!isAdmin && (
+              <div className="space-y-2 w-full">
+                {isCurrentlyBorrowing ? (
                   <div className="w-full text-center py-2.5 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-200">
                     <FaBookOpen size={14} className="inline mr-2" />You are currently borrowing this book
+                  </div>
+                ) : isArchived ? (
+                  <div className="w-full text-center py-2.5 bg-gray-50 text-gray-500 rounded-lg text-sm font-medium border border-gray-200">
+                    This book is archived
+                  </div>
+                ) : hasReachedLimit ? (
+                  <div className="w-full text-center py-2.5 bg-red-50 text-red-700 rounded-lg text-sm font-medium border border-red-200">
+                    <FaBookOpen size={14} className="inline mr-2" />
+                    Borrow limit reached ({maxBorrowLimit}/{maxBorrowLimit})
                   </div>
                 ) : availableCopies > 0 ? (
                   <button onClick={handleBorrow} disabled={borrowing} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition text-sm font-medium disabled:opacity-50">
                     <FaBookOpen size={14} />{borrowing ? 'Processing...' : 'Reserve for Pickup'}
                   </button>
                 ) : (
-                  <button onClick={handleReserve} disabled={reserving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium disabled:opacity-50">
-                    {reserving ? 'Processing...' : 'Join Waitlist'}
+                  <button onClick={handleReserve} disabled={reserving || hasReachedLimit} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium disabled:opacity-50">
+                    {reserving ? 'Processing...' : hasReachedLimit ? 'Return a book first' : 'Join Waitlist'}
                   </button>
                 )}
-              <button onClick={handleWishlistToggle} className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg transition text-sm font-medium ${isWishlisted ? 'border-red-500 text-red-500 bg-red-50' : 'border-[#EAE0D0] text-[#4A3728] hover:border-[#C4895A] hover:text-[#C4895A]'}`}>
-                {isWishlisted ? <FaHeart size={14} /> : <FaRegHeart size={14} />}{isWishlisted ? 'In Wishlist' : 'Add to Wishlist'}
-              </button>
-            </div>
+                <button onClick={handleWishlistToggle} className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg transition text-sm font-medium ${isWishlisted ? 'border-red-500 text-red-500 bg-red-50' : 'border-[#EAE0D0] text-[#4A3728] hover:border-[#C4895A] hover:text-[#C4895A]'}`}>
+                  {isWishlisted ? <FaHeart size={14} /> : <FaRegHeart size={14} />}{isWishlisted ? 'In Wishlist' : 'Add to Wishlist'}
+                </button>
+              </div>
+            )}
+
+            {/* Admin button */}
+            {isAdmin && (
+              <div className="space-y-2 w-full">
+                <Link 
+                  to="/admin/books" 
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2C1F14] text-white rounded-lg hover:bg-[#4A3728] transition text-sm font-medium"
+                >
+                  <FaBookOpen size={14} />Manage Books
+                </Link>
+              </div>
+            )}
           </div>
 
           <div className="flex-1">
@@ -238,6 +314,7 @@ const BookDetailPage = () => {
               {book.genre && <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.genre}</span>}
               <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.language || 'English'}</span>
               {book.published_year && <span className="px-2.5 py-1 bg-[#EAE0D0] text-[#6B4F40] text-xs rounded-full">{book.published_year}</span>}
+              {isArchived && <span className="px-2.5 py-1 bg-red-100 text-red-700 text-xs rounded-full font-medium flex items-center gap-1"><FaArchive size={10} /> Archived</span>}
             </div>
             <h1 className="font-serif text-3xl font-bold text-[#2C1F14] mb-1">{book.title}</h1>
             <p className="text-[#9A8478] text-sm mb-4">{book.author} · {book.publisher || 'Unknown Publisher'} · ISBN: {book.isbn || 'N/A'}</p>
@@ -264,7 +341,7 @@ const BookDetailPage = () => {
 
               {activeTab === 'reviews' && (
                 <div>
-                  {isAuthenticated && (!userReview || editingReview) && (
+                  {isAuthenticated && !isAdmin && (!userReview || editingReview) && (
                     <div className="bg-[#F3EDE3] rounded-xl p-5 mb-6">
                       <h3 className="font-serif text-base font-bold text-[#2C1F14] mb-3">{editingReview ? 'Edit Your Review' : 'Write a Review'}</h3>
                       <form onSubmit={handleReviewSubmit}>
@@ -319,7 +396,7 @@ const BookDetailPage = () => {
                     <div className="text-center">
                       <FaUsers className="text-4xl text-[#9A8478] mx-auto mb-3" />
                       <p className="text-[#4A3728] text-sm mb-3">No active reservations for this book.</p>
-                      {availableCopies === 0 && isAuthenticated && user?.role === 'member' && !isCurrentlyBorrowing && (
+                      {availableCopies === 0 && isAuthenticated && user?.role === 'member' && !isCurrentlyBorrowing && !hasReachedLimit && (
                         <button onClick={handleReserve} disabled={reserving} className="px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm disabled:opacity-50">{reserving ? 'Processing...' : 'Join Waitlist'}</button>
                       )}
                     </div>

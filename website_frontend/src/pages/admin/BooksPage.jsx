@@ -1,6 +1,6 @@
 // src/pages/admin/BooksPage.jsx
-import React, { useState, useEffect } from 'react';
-import { FaPlus, FaEdit, FaArchive, FaSearch, FaBook, FaTimes, FaUpload } from 'react-icons/fa';
+import React, { useState, useEffect, useCallback } from 'react';
+import { FaPlus, FaEdit, FaArchive, FaSearch, FaBook, FaTimes, FaUpload, FaUndo } from 'react-icons/fa';
 import { adminAPI, booksAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { Link } from 'react-router-dom';
@@ -17,11 +17,16 @@ const LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Chinese', 'Japanes
 
 const BooksPage = () => {
   const [books, setBooks] = useState([]);
+  const [archivedBooks, setArchivedBooks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('active'); // 'active' or 'archived'
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGenre, setFilterGenre] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [genres, setGenres] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalBooks, setTotalBooks] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
@@ -29,54 +34,74 @@ const BooksPage = () => {
   const [coverPreview, setCoverPreview] = useState(null);
   const [editCoverFile, setEditCoverFile] = useState(null);
   const [editCoverPreview, setEditCoverPreview] = useState(null);
+  const [restoringId, setRestoringId] = useState(null);
   const [newBook, setNewBook] = useState({
     title: '', author: '', isbn: '', genre: '', publisher: '',
     published_year: '', language: 'English', total_copies: 1, description: ''
   });
   const { showToast } = useToast();
 
+  // Fetch genres once
   useEffect(() => {
-    fetchBooks();
+    const fetchGenres = async () => {
+      try {
+        const data = await booksAPI.getGenres();
+        setGenres(data);
+      } catch (error) { console.error('Error fetching genres:', error); }
+    };
     fetchGenres();
   }, []);
 
-  const fetchBooks = async () => {
+  // Fetch books when tab, page, or filters change
+  useEffect(() => {
+    if (activeTab === 'active') {
+      fetchActiveBooks();
+    } else {
+      fetchArchivedBooks();
+    }
+  }, [activeTab, page, searchTerm, filterGenre, filterStatus]);
+
+  const fetchActiveBooks = async () => {
     setLoading(true);
     try {
-      const data = await booksAPI.getBooks({ per_page: 200 });
-      setBooks(data.books || []);
+      const params = { per_page: 20, page };
+      if (searchTerm) params.search = searchTerm;
+      if (filterGenre) params.genre = filterGenre;
+      const data = await booksAPI.getBooks(params);
+      let filtered = data.books || [];
+      if (filterStatus === 'available') {
+        filtered = filtered.filter(b => b.available_copies > 0);
+      } else if (filterStatus === 'unavailable') {
+        filtered = filtered.filter(b => b.available_copies === 0);
+      }
+      setBooks(filtered);
+      setTotalPages(data.total_pages || 1);
+      setTotalBooks(data.total || 0);
     } catch (error) { showToast('Failed to load books', 'error'); }
     finally { setLoading(false); }
   };
 
-  const fetchGenres = async () => {
+  const fetchArchivedBooks = async () => {
+    setLoading(true);
     try {
-      const data = await booksAPI.getGenres();
-      setGenres(data);
-    } catch (error) { console.error('Error fetching genres:', error); }
+      const data = await adminAPI.getArchivedBooks(page, searchTerm);
+      setArchivedBooks(data.books || []);
+      setTotalPages(data.total_pages || 1);
+      setTotalBooks(data.total || 0);
+    } catch (error) { showToast('Failed to load archived books', 'error'); }
+    finally { setLoading(false); }
   };
 
-  // Get unique genres from both predefined and database
   const allGenres = [...new Set([...GENRE_OPTIONS, ...genres])].sort();
 
   const handleCoverChange = (e, isEdit = false) => {
     const file = e.target.files[0];
     if (!file) return;
-    
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('Image too large. Max 5MB', 'error');
-      return;
-    }
-    
+    if (file.size > 5 * 1024 * 1024) { showToast('Image too large. Max 5MB', 'error'); return; }
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (isEdit) {
-        setEditCoverFile(file);
-        setEditCoverPreview(e.target.result);
-      } else {
-        setCoverFile(file);
-        setCoverPreview(e.target.result);
-      }
+      if (isEdit) { setEditCoverFile(file); setEditCoverPreview(e.target.result); }
+      else { setCoverFile(file); setCoverPreview(e.target.result); }
     };
     reader.readAsDataURL(file);
   };
@@ -87,22 +112,18 @@ const BooksPage = () => {
       const formData = new FormData();
       Object.keys(newBook).forEach(key => formData.append(key, newBook[key]));
       if (coverFile) formData.append('cover_image', coverFile);
-      
-      // Use FormData upload endpoint
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch('http://localhost:5000/api/admin/books', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
-      
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to add book');
-      
       showToast('Book added successfully!', 'success');
       setShowAddModal(false);
       resetForm();
-      fetchBooks();
+      fetchActiveBooks();
     } catch (error) { showToast(error.message || 'Failed to add book', 'error'); }
   };
 
@@ -116,23 +137,20 @@ const BooksPage = () => {
         }
       });
       if (editCoverFile) formData.append('cover_image', editCoverFile);
-      
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch(`http://localhost:5000/api/admin/books/${editingBook.book_id}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
-      
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to update book');
-      
       showToast('Book updated successfully!', 'success');
       setShowEditModal(false);
       setEditingBook(null);
       setEditCoverFile(null);
       setEditCoverPreview(null);
-      fetchBooks();
+      fetchActiveBooks();
     } catch (error) { showToast(error.message || 'Failed to update book', 'error'); }
   };
 
@@ -144,12 +162,23 @@ const BooksPage = () => {
   };
 
   const handleArchiveBook = async (bookId, title) => {
-    if (!window.confirm(`Are you sure you want to archive "${title}"?`)) return;
+    if (!window.confirm(`Archive "${title}"? It will be moved to the archived section.`)) return;
     try {
       await adminAPI.archiveBook(bookId);
       showToast('Book archived successfully', 'success');
-      fetchBooks();
+      fetchActiveBooks();
     } catch (error) { showToast(error.message || 'Failed to archive book', 'error'); }
+  };
+
+  const handleRestoreBook = async (bookId, title) => {
+    if (!window.confirm(`Restore "${title}" back to the catalogue?`)) return;
+    setRestoringId(bookId);
+    try {
+      await adminAPI.restoreBook(bookId);
+      showToast(`"${title}" restored successfully!`, 'success');
+      fetchArchivedBooks();
+    } catch (error) { showToast(error.message || 'Failed to restore book', 'error'); }
+    finally { setRestoringId(null); }
   };
 
   const resetForm = () => {
@@ -158,107 +187,189 @@ const BooksPage = () => {
     setCoverPreview(null);
   };
 
-  const filteredBooks = books.filter(book => {
-    const matchesSearch = book.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          book.author?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          book.isbn?.includes(searchTerm);
-    const matchesGenre = !filterGenre || book.genre === filterGenre;
-    const matchesStatus = !filterStatus || 
-      (filterStatus === 'available' && book.available_copies > 0) ||
-      (filterStatus === 'unavailable' && book.available_copies === 0);
-    return matchesSearch && matchesGenre && matchesStatus;
-  });
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const currentBooks = activeTab === 'active' ? books : archivedBooks;
+  const tabCounts = { active: 0, archived: 0 };
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Manage Books</h1>
-          <p className="text-[#9A8478] mt-1">Add, edit, and manage library books</p>
+          <p className="text-[#9A8478] mt-1">Add, edit, archive, and restore library books</p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition">
-          <FaPlus size={14} />Add New Book
+        {activeTab === 'active' && (
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition">
+            <FaPlus size={14} />Add New Book
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-[#EAE0D0] mb-6">
+        <button
+          onClick={() => { setActiveTab('active'); setPage(1); }}
+          className={`px-6 py-3 text-sm font-medium transition-all duration-200 ${
+            activeTab === 'active' ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'
+          }`}
+        >
+          <FaBook size={12} className="inline mr-2" />Active Books
+        </button>
+        <button
+          onClick={() => { setActiveTab('archived'); setPage(1); }}
+          className={`px-6 py-3 text-sm font-medium transition-all duration-200 ${
+            activeTab === 'archived' ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'
+          }`}
+        >
+          <FaArchive size={12} className="inline mr-2" />Archived Books
         </button>
       </div>
 
-      {/* Filters */}
+      {/* Filters (only for active tab) */}
       <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1 relative">
             <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" />
-            <input type="text" placeholder="Search by title, author, or ISBN..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A]" />
+            <input
+              type="text"
+              placeholder={activeTab === 'active' ? "Search by title, author, or ISBN..." : "Search archived books..."}
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+              className="w-full pl-10 pr-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
+            />
           </div>
-          <select value={filterGenre} onChange={(e) => setFilterGenre(e.target.value)} className="px-4 py-2 border border-[#EAE0D0] rounded-lg bg-white">
-            <option value="">All Genres</option>
-            {allGenres.map(g => <option key={g} value={g}>{g}</option>)}
-          </select>
-          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-4 py-2 border border-[#EAE0D0] rounded-lg bg-white">
-            <option value="">All Status</option>
-            <option value="available">Available</option>
-            <option value="unavailable">Unavailable</option>
-          </select>
+          {activeTab === 'active' && (
+            <>
+              <select value={filterGenre} onChange={(e) => setFilterGenre(e.target.value)} className="px-4 py-2 border border-[#EAE0D0] rounded-lg bg-white text-sm">
+                <option value="">All Genres</option>
+                {allGenres.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-4 py-2 border border-[#EAE0D0] rounded-lg bg-white text-sm">
+                <option value="">All Status</option>
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+              </select>
+            </>
+          )}
         </div>
       </div>
 
       {/* Books Table */}
       <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-4 border-[#C4895A] border-t-transparent rounded-full animate-spin"></div></div>
+          <div className="flex items-center justify-center h-64">
+            <div className="w-8 h-8 border-4 border-[#C4895A] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : currentBooks.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-[#F3EDE3] rounded-full flex items-center justify-center mx-auto mb-4">
+              {activeTab === 'active' ? <FaBook className="text-[#9A8478] text-2xl" /> : <FaArchive className="text-[#9A8478] text-2xl" />}
+            </div>
+            <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-2">
+              {activeTab === 'active' ? 'No books found' : 'No archived books'}
+            </h3>
+            <p className="text-[#9A8478] text-sm">
+              {searchTerm || filterGenre || filterStatus
+                ? 'Try adjusting your filters.'
+                : activeTab === 'active'
+                  ? 'Add your first book to get started.'
+                  : 'No books have been archived yet.'}
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-[#F3EDE3] border-b border-[#EAE0D0]">
                 <tr>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Cover</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Title</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Author</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Genre</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">ISBN</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Copies</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Status</th>
-                  <th className="text-left py-3 px-4 text-xs font-bold uppercase">Actions</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Cover</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Title</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Author</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Genre</th>
+                  <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">ISBN</th>
+                  {activeTab === 'active' ? (
+                    <>
+                      <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Copies</th>
+                      <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Status</th>
+                    </>
+                  ) : (
+                    <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Archived</th>
+                  )}
+                  <th className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAE0D0]">
-                {filteredBooks.length === 0 ? (
-                  <tr><td colSpan="8" className="py-8 text-center text-[#9A8478]"><FaBook className="text-4xl mx-auto mb-2 opacity-30" />No books found</td></tr>
-                ) : (
-                  filteredBooks.map((book) => (
-                    <tr key={book.book_id} className="hover:bg-[#FAF7F2] transition">
-                      <td className="py-3 px-4">
-                        {book.cover_image ? (
-                          <img src={`http://localhost:5000/uploads/covers/${book.cover_image}`} alt="" className="w-10 h-14 object-cover rounded" />
-                        ) : (
-                          <div className="w-10 h-14 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded flex items-center justify-center">
-                            <FaBook className="text-white/50 text-xs" />
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4"><Link to={`/book/${book.book_id}`} className="font-medium text-[#2C1F14] hover:text-[#C4895A] transition">{book.title}</Link></td>
-                      <td className="py-3 px-4 text-[#4A3728]">{book.author}</td>
-                      <td className="py-3 px-4 text-[#4A3728]">{book.genre || '—'}</td>
-                      <td className="py-3 px-4 text-[#4A3728] text-sm">{book.isbn || '—'}</td>
-                      <td className="py-3 px-4 text-[#4A3728]">{book.available_copies} / {book.total_copies}</td>
-                      <td className="py-3 px-4">
-                        <span className={`text-xs px-2 py-1 rounded-full ${book.available_copies > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {book.available_copies > 0 ? 'Available' : 'Unavailable'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => openEditModal(book)} className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition" title="Edit"><FaEdit size={12} /></button>
-                          <button onClick={() => handleArchiveBook(book.book_id, book.title)} className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition" title="Archive"><FaArchive size={12} /></button>
+                {currentBooks.map((book) => (
+                  <tr key={book.book_id} className="hover:bg-[#FAF7F2] transition">
+                    <td className="py-3 px-4">
+                      {book.cover_image ? (
+                        <img src={`http://localhost:5000/uploads/covers/${book.cover_image}`} alt="" className="w-10 h-14 object-cover rounded" onError={(e) => { e.target.style.display = 'none'; }} />
+                      ) : (
+                        <div className="w-10 h-14 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded flex items-center justify-center">
+                          <FaBook className="text-white/50 text-xs" />
                         </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <Link to={`/book/${book.book_id}`} className="font-medium text-[#2C1F14] hover:text-[#C4895A] transition">{book.title}</Link>
+                    </td>
+                    <td className="py-3 px-4 text-[#4A3728] text-sm">{book.author}</td>
+                    <td className="py-3 px-4">
+                      {book.genre && (
+                        <span className="text-xs px-2 py-1 bg-[#EAE0D0] rounded-full text-[#6B4F40]">{book.genre}</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-[#4A3728] text-sm font-mono">{book.isbn || '—'}</td>
+                    {activeTab === 'active' ? (
+                      <>
+                        <td className="py-3 px-4 text-[#4A3728] text-sm">{book.available_copies} / {book.total_copies}</td>
+                        <td className="py-3 px-4">
+                          <span className={`text-xs px-2 py-1 rounded-full ${book.available_copies > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {book.available_copies > 0 ? 'Available' : 'Unavailable'}
+                          </span>
+                        </td>
+                      </>
+                    ) : (
+                      <td className="py-3 px-4 text-[#9A8478] text-sm">{formatDate(book.updated_at)}</td>
+                    )}
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        {activeTab === 'active' ? (
+                          <>
+                            <button onClick={() => openEditModal(book)} className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition" title="Edit"><FaEdit size={12} /></button>
+                            <button onClick={() => handleArchiveBook(book.book_id, book.title)} className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition" title="Archive"><FaArchive size={12} /></button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleRestoreBook(book.book_id, book.title)}
+                            disabled={restoringId === book.book_id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition disabled:opacity-50"
+                          >
+                            <FaUndo size={11} />
+                            {restoringId === book.book_id ? 'Restoring...' : 'Restore'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center gap-2 mt-6">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-2 border border-[#EAE0D0] rounded-lg text-sm disabled:opacity-50 hover:bg-[#F3EDE3] transition">Previous</button>
+          <span className="text-sm text-[#9A8478]">Page {page} of {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-2 border border-[#EAE0D0] rounded-lg text-sm disabled:opacity-50 hover:bg-[#F3EDE3] transition">Next</button>
+        </div>
+      )}
 
       {/* Add Book Modal */}
       {showAddModal && (

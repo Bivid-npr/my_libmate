@@ -37,7 +37,6 @@ import BookRequestsPage from './pages/admin/BookRequestsPage';
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage';
 import AdminSmokeAlertsPage from './pages/admin/SmokeAtertPage';
 import AdminNotificationsPage from './pages/admin/NotificationsPage';
-import AdminSettingsPage from './pages/admin/SettingsPage';
 
 // Redirect admin away from user pages
 const AdminRedirect = ({ children }) => {
@@ -105,11 +104,9 @@ function AppContent() {
 
   return (
     <Routes>
-      {/* Public routes - admin gets redirected away */}
+      {/* Public routes — admins can view these */}
       <Route path="/" element={
-        <AdminRedirect>
-          <Layout />
-        </AdminRedirect>
+        isAdmin ? <AdminLayout /> : <Layout />
       }>
         <Route index element={<HomePage />} />
         <Route path="catalogue" element={<CataloguePage />} />
@@ -118,11 +115,9 @@ function AppContent() {
         <Route path="book/:id" element={<BookDetailPage />} />
       </Route>
 
-      {/* Member routes - admin gets redirected away */}
+      {/* Member routes — ONLY for non-admin authenticated users */}
       <Route path="/" element={
-        <AdminRedirect>
-          <MemberLayout />
-        </AdminRedirect>
+        isAdmin ? <Navigate to="/admin" replace /> : <MemberLayout />
       }>
         <Route path="my-books" element={
           <ProtectedMemberRoute><MyBooksPage /></ProtectedMemberRoute>
@@ -168,11 +163,10 @@ function AppContent() {
         <Route path="users" element={<AdminUsersPage />} />
         <Route path="users/:userId" element={<UserDetailPage />} />
         <Route path="borrowings" element={<AdminBorrowingsPage />} />
-        <Route path="/admin/book-requests" element={<BookRequestsPage />} />
+        <Route path="book-requests" element={<BookRequestsPage />} />
         <Route path="announcements" element={<AdminAnnouncementsPage />} />
         <Route path="smoke-alerts" element={<AdminSmokeAlertsPage />} />
         <Route path="notifications" element={<AdminNotificationsPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
         
         <Route path="*" element={
           <div className="text-center py-12">
@@ -188,15 +182,13 @@ function AppContent() {
         isAdmin ? (
           <Navigate to="/admin" replace />
         ) : (
-          <Layout>
-            <div className="min-h-screen flex items-center justify-center bg-[#FAF7F2]">
-              <div className="text-center">
-                <h1 className="font-serif text-4xl font-bold text-[#2C1F14] mb-4">404</h1>
-                <p className="text-[#9A8478] mb-6">Page not found</p>
-                <Link to="/" className="text-[#C4895A] hover:underline">Return Home</Link>
-              </div>
+          <div className="min-h-screen flex items-center justify-center bg-[#FAF7F2]">
+            <div className="text-center">
+              <h1 className="font-serif text-4xl font-bold text-[#2C1F14] mb-4">404</h1>
+              <p className="text-[#9A8478] mb-6">Page not found</p>
+              <Link to="/" className="text-[#C4895A] hover:underline">Return Home</Link>
             </div>
-          </Layout>
+          </div>
         )
       } />
     </Routes>

@@ -186,4 +186,16 @@ export const adminAPI = {
   getNotifications: () => apiRequest('/admin/notifications'),
   markNotificationRead: (id) => apiRequest(`/admin/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () => apiRequest('/admin/notifications/read-all', { method: 'POST' }),
+  getArchivedBooks: (page = 1, search = '') => {
+    let url = `/admin/books/archived?page=${page}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    return apiRequest(url);
+  },
+  restoreBook: (bookId) => apiRequest(`/admin/books/${bookId}/restore`, { method: 'POST' }),
+  getInactiveUsers: (page = 1, search = '') => {
+    let url = `/admin/users/inactive?page=${page}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    return apiRequest(url);
+  },
+  activateUser: (userId) => apiRequest(`/admin/users/${userId}/activate`, { method: 'POST' }),
 };

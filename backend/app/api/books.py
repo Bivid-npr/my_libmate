@@ -147,10 +147,47 @@ def get_languages():
 @books_bp.route('/<int:book_id>', methods=['GET'])
 def get_book(book_id):
     """Get single book with reviews"""
-    result = db.session.execute(
-        text("SELECT * FROM vw_book_catalogue WHERE book_id = :book_id"),
-        {'book_id': book_id}
-    ).first()
+    from flask_jwt_extended import verify_jwt_in_request, get_jwt, get_jwt_identity
+    
+    # Check if admin is requesting
+    is_admin = False
+    try:
+        verify_jwt_in_request(optional=True)
+        claims = get_jwt()
+        if claims and claims.get('type') == 'admin':
+            is_admin = True
+    except Exception as e:
+        is_admin = False
+    
+    # For admins: query books table directly (bypasses the view's is_archived filter)
+    # For regular users/guests: use the view which filters archived books
+    if is_admin:
+        result = db.session.execute(
+            text("""
+                SELECT 
+                    b.book_id, b.title, b.author, b.isbn, b.genre, 
+                    b.publisher, b.published_year, b.language,
+                    b.total_copies, b.available_copies, b.status,
+                    b.total_borrow_count, b.description, b.cover_image,
+                    b.is_archived,
+                    COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
+                    COUNT(r.review_id) AS total_reviews
+                FROM books b
+                LEFT JOIN reviews r ON b.book_id = r.book_id
+                WHERE b.book_id = :book_id
+                GROUP BY b.book_id, b.title, b.author, b.isbn, b.genre,
+                         b.publisher, b.published_year, b.language,
+                         b.total_copies, b.available_copies, b.status,
+                         b.total_borrow_count, b.description, b.cover_image,
+                         b.is_archived
+            """),
+            {'book_id': book_id}
+        ).first()
+    else:
+        result = db.session.execute(
+            text("SELECT * FROM vw_book_catalogue WHERE book_id = :book_id"),
+            {'book_id': book_id}
+        ).first()
     
     if not result:
         return jsonify({'error': 'Book not found'}), 404
@@ -170,8 +207,6 @@ def get_book(book_id):
     
     in_wishlist = False
     try:
-        from flask_jwt_extended import verify_jwt_in_request
-        verify_jwt_in_request(optional=True)
         identity = get_jwt_identity()
         if identity:
             user_id = int(identity)

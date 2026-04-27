@@ -208,36 +208,6 @@ def update_book(book_id):
     return jsonify({'message': 'Book updated successfully'}), 200
 
 
-@admin_bp.route('/books/<int:book_id>', methods=['DELETE'])
-@jwt_required()
-@require_admin
-def archive_book(book_id):
-    """Archive a book (soft delete) - clean up cover file"""
-    admin_id = int(get_jwt_identity())
-    
-    book = db.session.execute(
-        text("SELECT cover_image FROM books WHERE book_id = :book_id"),
-        {'book_id': book_id}
-    ).first()
-    
-    if book and book[0]:
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'covers')
-        cover_path = os.path.join(upload_folder, book[0])
-        if os.path.exists(cover_path):
-            try:
-                os.remove(cover_path)
-            except Exception as e:
-                print(f"Error deleting cover during archive: {e}")
-    
-    db.session.execute(
-        text("UPDATE books SET is_archived = TRUE, cover_image = NULL, updated_at = NOW() WHERE book_id = :book_id"),
-        {'book_id': book_id}
-    )
-    db.session.commit()
-    
-    return jsonify({'message': 'Book archived successfully'}), 200
-
-
 # ============================================================
 # MEMBERSHIP MANAGEMENT (with notification integration)
 # ============================================================
@@ -941,3 +911,152 @@ def mark_all_admin_notifications_read():
     )
     db.session.commit()
     return jsonify({'message': 'All marked as read'}), 200
+
+# ============================================================
+# ARCHIVED BOOKS MANAGEMENT
+# ============================================================
+
+@admin_bp.route('/books/<int:book_id>', methods=['DELETE'])
+@jwt_required()
+@require_admin
+def archive_book(book_id):
+    """Archive a book (soft delete) - KEEPS cover image for restoration"""
+    admin_id = int(get_jwt_identity())
+    
+    # Check if book exists and isn't already archived
+    book = db.session.execute(
+        text("SELECT book_id, title, is_archived FROM books WHERE book_id = :book_id"),
+        {'book_id': book_id}
+    ).first()
+    
+    if not book:
+        return jsonify({'error': 'Book not found'}), 404
+    
+    if book[2]:  # already archived
+        return jsonify({'error': 'Book is already archived'}), 400
+    
+    # Archive WITHOUT deleting cover image or setting it to NULL
+    db.session.execute(
+        text("UPDATE books SET is_archived = TRUE, updated_at = NOW() WHERE book_id = :book_id"),
+        {'book_id': book_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': f'"{book[1]}" archived successfully'}), 200
+
+@admin_bp.route('/books/archived', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_archived_books():
+    """Get all archived books"""
+    admin_id = int(get_jwt_identity())
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '')
+    
+    query = """
+        SELECT * FROM books 
+        WHERE is_archived = TRUE
+    """
+    count_query = "SELECT COUNT(*) as total FROM books WHERE is_archived = TRUE"
+    params = {}
+    count_params = {}
+    
+    if search:
+        query += " AND (title LIKE :search OR author LIKE :search OR isbn LIKE :search)"
+        count_query += " AND (title LIKE :search OR author LIKE :search OR isbn LIKE :search)"
+        params['search'] = f'%{search}%'
+        count_params['search'] = f'%{search}%'
+    
+    total_result = db.session.execute(text(count_query), count_params).first()
+    total = total_result[0] if total_result else 0
+    
+    query += " ORDER BY updated_at DESC LIMIT :limit OFFSET :offset"
+    params['limit'] = per_page
+    params['offset'] = (page - 1) * per_page
+    
+    result = db.session.execute(text(query), params)
+    books = [dict(row._mapping) for row in result]
+    
+    return jsonify({
+        'books': books, 'total': total, 'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
+    }), 200
+
+
+@admin_bp.route('/books/<int:book_id>/restore', methods=['POST'])
+@jwt_required()
+@require_admin
+def restore_book(book_id):
+    """Restore an archived book"""
+    admin_id = int(get_jwt_identity())
+    
+    book = db.session.execute(
+        text("SELECT book_id, title, is_archived FROM books WHERE book_id = :bid"),
+        {'bid': book_id}
+    ).first()
+    
+    if not book:
+        return jsonify({'error': 'Book not found'}), 404
+    
+    if not book[2]:
+        return jsonify({'error': 'Book is not archived'}), 400
+    
+    # Restore the book - cover_image stays intact
+    db.session.execute(
+        text("UPDATE books SET is_archived = FALSE, updated_at = NOW() WHERE book_id = :bid"),
+        {'bid': book_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': f'"{book[1]}" restored successfully'}), 200
+
+
+# ============================================================
+# ARCHIVED / INACTIVE USERS MANAGEMENT
+# ============================================================
+
+@admin_bp.route('/users/inactive', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_inactive_users():
+    """Get all inactive/deactivated users"""
+    admin_id = int(get_jwt_identity())
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '')
+    
+    query = """
+        SELECT u.*, 
+               (SELECT COUNT(*) FROM borrowings b WHERE b.user_id = u.user_id AND b.status NOT IN ('returned', 'lost')) as active_borrows,
+               (SELECT COUNT(*) FROM borrow_history bh WHERE bh.user_id = u.user_id) as total_books_read,
+               (SELECT COUNT(*) FROM memberships m WHERE m.user_id = u.user_id) as total_memberships
+        FROM users u
+        WHERE u.is_active = FALSE
+    """
+    count_query = "SELECT COUNT(*) as total FROM users u WHERE u.is_active = FALSE"
+    params = {}
+    count_params = {}
+    
+    if search:
+        query += " AND (u.full_name LIKE :search OR u.email LIKE :search)"
+        count_query += " AND (u.full_name LIKE :search OR u.email LIKE :search)"
+        params['search'] = f'%{search}%'
+        count_params['search'] = f'%{search}%'
+    
+    total_result = db.session.execute(text(count_query), count_params).first()
+    total = total_result[0] if total_result else 0
+    
+    query += " ORDER BY u.updated_at DESC LIMIT :limit OFFSET :offset"
+    params['limit'] = per_page
+    params['offset'] = (page - 1) * per_page
+    
+    result = db.session.execute(text(query), params)
+    users = [dict(row._mapping) for row in result]
+    
+    return jsonify({
+        'users': users, 'total': total, 'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
+    }), 200
