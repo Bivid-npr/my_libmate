@@ -66,6 +66,10 @@ export const authAPI = {
   getCurrentUser: () => apiRequest('/auth/me'),
   changePassword: (oldPassword, newPassword) => 
     apiRequest('/auth/change-password', { method: 'POST', body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }) }),
+  forgotPassword: (email) => 
+    apiRequest('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (token, password) => 
+    apiRequest('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
 };
 
 // ============ BOOKS API ============

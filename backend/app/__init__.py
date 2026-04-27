@@ -26,6 +26,10 @@ def create_app(config_class=Config):
     CORS(app, origins=app.config['CORS_ORIGINS'], supports_credentials=True)
     socketio.init_app(app, cors_allowed_origins="*")
     
+    # Initialize Flask-Mail
+    from .services.email_service import init_mail
+    init_mail(app)
+    
     # JWT Configuration
     app.config["JWT_SECRET_KEY"] = app.config['JWT_SECRET_KEY']
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=1)
@@ -73,7 +77,6 @@ def create_app(config_class=Config):
                 print(f'Token decode failed: {e}')
                 join_room('admin_room')  # Fallback
         else:
-            # Guest connection - just join a general room
             join_room('guest_room')
             print('Guest connected to socket')
     
@@ -116,15 +119,25 @@ def create_app(config_class=Config):
             schedule.run_pending()
             time.sleep(60)
     
+    # Schedule tasks (runs in both development and production for testing)
+    from .services.notification_service import NotificationService
+    from .services.email_service import send_due_date_reminder_emails, send_overdue_notice_emails
+    
+    # Notification reminders (in-app)
+    schedule.every().day.at("09:00").do(NotificationService.send_due_date_reminders)
+    schedule.every().day.at("09:00").do(NotificationService.send_overdue_notices)
+    schedule.every().day.at("09:00").do(NotificationService.send_membership_expiry_warnings)
+    
+    # Email reminders
+    schedule.every().day.at("09:00").do(send_due_date_reminder_emails)
+    schedule.every().day.at("09:00").do(send_overdue_notice_emails)
+    
     if app.config.get('FLASK_ENV') == 'production':
-        from .services.notification_service import NotificationService
         from .services.recommendation_service import RecommendationService
-        
-        schedule.every().day.at("00:00").do(NotificationService.send_due_date_reminders)
-        schedule.every().day.at("00:00").do(NotificationService.send_overdue_notices)
         schedule.every().monday.at("02:00").do(RecommendationService.update_trending_books)
-        
-        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-        scheduler_thread.start()
+    
+    # Start scheduler thread
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
     
     return app

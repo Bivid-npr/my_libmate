@@ -9,6 +9,14 @@ class Config:
     DB_USER = os.getenv('DB_USER', 'root')
     DB_PASSWORD = os.getenv('DB_PASSWORD', '')
     DB_NAME = os.getenv('DB_NAME', 'libmate_test')
+
+    # Email Configuration
+    MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+    MAIL_PORT = int(os.getenv('MAIL_PORT', 587))
+    MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
+    MAIL_USERNAME = os.getenv('MAIL_USERNAME', 'your-email@gmail.com')
+    MAIL_PASSWORD = os.getenv('MAIL_PASSWORD', 'your-app-password')
+    MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER', 'LibMate <your-email@gmail.com>')
     
     # MySQL Connection String
     SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4'

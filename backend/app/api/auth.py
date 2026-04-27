@@ -248,3 +248,141 @@ def change_password():
     db.session.commit()
     
     return jsonify({'message': 'Password changed successfully'}), 200
+
+
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    """Send password reset email"""
+    from flask_jwt_extended import create_access_token
+    
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    # Check if user exists (users OR admins)
+    user = db.session.execute(
+        text("SELECT 'user' as user_type, user_id, full_name, email FROM users WHERE email = :email AND is_active = TRUE"),
+        {'email': email}
+    ).first()
+    
+    user_type = 'user'
+    if not user:
+        user = db.session.execute(
+            text("SELECT 'admin' as user_type, admin_id as user_id, full_name, email FROM admins WHERE email = :email AND is_active = TRUE"),
+            {'email': email}
+        ).first()
+        user_type = 'admin'
+    
+    if not user:
+        # Don't reveal if email exists (security)
+        return jsonify({'message': 'If an account with that email exists, a reset link has been sent.'}), 200
+    
+    user = dict(user._mapping)
+    
+    # Create a short-lived JWT token with email and type embedded
+    reset_token = create_access_token(
+        identity=str(user['user_id']),
+        additional_claims={
+            'type': user_type,
+            'email': email,
+            'purpose': 'password_reset'
+        },
+        expires_delta=timedelta(hours=1)
+    )
+    
+    # Send email
+    reset_link = f"http://localhost:5173/reset-password/{reset_token}"
+    
+    subject = "LibMate - Password Reset"
+    body = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #4A3728;">LibMate Library</h2>
+        <p>Dear {user['full_name']},</p>
+        <p>You requested a password reset. Click the button below to reset your password:</p>
+        <div style="text-align: center; margin: 20px 0;">
+            <a href="{reset_link}" 
+               style="background: #C4895A; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                Reset Password
+            </a>
+        </div>
+        <p>Or copy this link: {reset_link}</p>
+        <p style="color: #B85450;">This link expires in 1 hour.</p>
+        <p style="color: #9A8478; font-size: 12px; margin-top: 30px;">
+            If you didn't request this, please ignore this email.
+        </p>
+    </div>
+    """
+    
+    from ..services.email_service import send_email
+    send_email(email, subject, body)
+    
+    return jsonify({'message': 'If an account with that email exists, a reset link has been sent.'}), 200
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Reset password using JWT token"""
+    from flask_jwt_extended import decode_token
+    
+    data = request.get_json()
+    token = data.get('token', '')
+    new_password = data.get('password', '')
+    
+    if not token or not new_password:
+        return jsonify({'error': 'Token and new password are required'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    # Decode and verify the token
+    try:
+        decoded = decode_token(token)
+        
+        # The claims might be in 'sub' or directly accessible
+        claims = {}
+        if hasattr(decoded, 'get'):
+            claims = decoded
+        else:
+            # Try accessing as dictionary keys
+            claims = {
+                'sub': decoded.get('sub') if hasattr(decoded, 'get') else None,
+                'type': decoded.get('type') if hasattr(decoded, 'get') else None,
+                'email': decoded.get('email') if hasattr(decoded, 'get') else None,
+                'purpose': decoded.get('purpose') if hasattr(decoded, 'get') else None,
+            }
+        
+        # Check if this is a password reset token
+        purpose = claims.get('purpose') if hasattr(claims, 'get') else None
+        email = claims.get('email') if hasattr(claims, 'get') else None
+        user_type = claims.get('type') if hasattr(claims, 'get') else None
+        
+        if purpose != 'password_reset':
+            return jsonify({'error': 'Invalid reset token'}), 400
+        
+        if not email:
+            return jsonify({'error': 'Invalid reset token - no email'}), 400
+        
+        print(f"Reset password for: {email}, type: {user_type}")
+        
+    except Exception as e:
+        print(f"Token decode error: {str(e)}")
+        return jsonify({'error': f'Invalid or expired reset link'}), 400
+    
+    new_hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    if user_type == 'admin':
+        result = db.session.execute(
+            text("UPDATE admins SET password_hash = :hash, updated_at = NOW() WHERE email = :email AND is_active = TRUE"),
+            {'hash': new_hashed, 'email': email}
+        )
+    else:
+        result = db.session.execute(
+            text("UPDATE users SET password_hash = :hash, updated_at = NOW() WHERE email = :email AND is_active = TRUE"),
+            {'hash': new_hashed, 'email': email}
+        )
+    
+    db.session.commit()
+    
+    return jsonify({'message': 'Password reset successful! You can now log in.'}), 200
