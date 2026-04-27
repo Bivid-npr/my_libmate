@@ -1060,3 +1060,112 @@ def get_inactive_users():
         'per_page': per_page,
         'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
     }), 200
+
+
+# ============================================================
+# ANNOUNCEMENTS
+# ============================================================
+
+@admin_bp.route('/announcements', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_announcements():
+    """Get all announcements"""
+    admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("""
+            SELECT n.*
+            FROM notifications n
+            WHERE n.type = 'announcement'
+            ORDER BY n.created_at DESC
+            LIMIT 50
+        """)
+    )
+    announcements = [dict(row._mapping) for row in result]
+    return jsonify(announcements), 200
+
+
+@admin_bp.route('/announcements/send', methods=['POST'])
+@jwt_required()
+@require_admin
+def send_announcement():
+    """Send an announcement to all users"""
+    admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    title = data.get('title', '').strip()
+    message = data.get('message', '').strip()
+    
+    if not title or not message:
+        return jsonify({'error': 'Title and message are required'}), 400
+    
+    # Insert notification
+    db.session.execute(
+        text("INSERT INTO notifications (type, title, message) VALUES ('announcement', :title, :message)"),
+        {'title': title, 'message': message}
+    )
+    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
+    
+    # Send to all active users
+    db.session.execute(
+        text("""
+            INSERT INTO user_notifications (user_id, notification_id)
+            SELECT user_id, :nid FROM users WHERE is_active = TRUE
+        """),
+        {'nid': notification_id}
+    )
+    
+    # Also add to admin_notifications for tracking
+    db.session.execute(
+        text("INSERT INTO admin_notifications (admin_id, notification_id) VALUES (:aid, :nid)"),
+        {'aid': admin_id, 'nid': notification_id}
+    )
+    
+    db.session.commit()
+    
+    # WebSocket notify all users
+    from ..api.socket_events import notify_user_socket
+    
+    # Get all active user IDs
+    users = db.session.execute(
+        text("SELECT user_id FROM users WHERE is_active = TRUE")
+    ).fetchall()
+    
+    for user in users:
+        notify_user_socket(user[0], {
+            'notification_id': notification_id,
+            'type': 'announcement',
+            'title': title,
+            'message': message,
+            'is_read': False
+        })
+    
+    return jsonify({
+        'message': 'Announcement sent successfully',
+        'sent_to': len(users)
+    }), 201
+
+
+@admin_bp.route('/announcements/<int:notification_id>', methods=['DELETE'])
+@jwt_required()
+@require_admin
+def delete_announcement(notification_id):
+    """Delete an announcement"""
+    admin_id = int(get_jwt_identity())
+    
+    db.session.execute(
+        text("DELETE FROM user_notifications WHERE notification_id = :nid"),
+        {'nid': notification_id}
+    )
+    db.session.execute(
+        text("DELETE FROM admin_notifications WHERE notification_id = :nid"),
+        {'nid': notification_id}
+    )
+    db.session.execute(
+        text("DELETE FROM notifications WHERE notification_id = :nid AND type = 'announcement'"),
+        {'nid': notification_id}
+    )
+    db.session.commit()
+    
+    return jsonify({'message': 'Announcement deleted'}), 200

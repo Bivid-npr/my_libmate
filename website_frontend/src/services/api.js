@@ -198,4 +198,8 @@ export const adminAPI = {
     return apiRequest(url);
   },
   activateUser: (userId) => apiRequest(`/admin/users/${userId}/activate`, { method: 'POST' }),
+  getAnnouncements: () => apiRequest('/admin/announcements'),
+  sendAnnouncement: (title, message) => 
+    apiRequest('/admin/announcements/send', { method: 'POST', body: JSON.stringify({ title, message }) }),
+  deleteAnnouncement: (id) => apiRequest(`/admin/announcements/${id}`, { method: 'DELETE' }),
 };
