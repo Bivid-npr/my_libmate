@@ -3,6 +3,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import text
 from ..extensions import db
 from ..utils.auth_utils import require_user
+from ..services.notification_service import NotificationService
+
 
 books_bp = Blueprint('books', __name__)
 
@@ -394,6 +396,8 @@ def request_book():
         }
     )
     db.session.commit()
+
+    NotificationService.notify_admins_book_request(user_id, title)
     
     return jsonify({'message': 'Book request submitted successfully! The library will review your request.'}), 201
 

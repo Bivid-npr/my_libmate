@@ -5,6 +5,8 @@ from ..extensions import db
 from ..utils.auth_utils import require_user
 import os
 from datetime import datetime
+from ..services.notification_service import NotificationService
+
 
 membership_bp = Blueprint('membership', __name__)
 
@@ -102,6 +104,8 @@ def apply_membership():
         {'user_id': user_id, 'duration_months': duration_months, 'receipt': receipt_filename}
     )
     db.session.commit()
+
+    NotificationService.notify_admins_new_membership(user_id, duration_months)
     
     return jsonify({'message': 'Membership application submitted successfully! Awaiting admin approval.'}), 201
 

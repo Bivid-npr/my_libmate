@@ -4,6 +4,7 @@ from sqlalchemy import text
 from datetime import datetime, timedelta, date  
 from ..extensions import db
 from ..utils.auth_utils import require_admin
+from ..services.notification_service import NotificationService
 import os
 
 admin_bp = Blueprint('admin', __name__)
@@ -52,6 +53,18 @@ def admin_dashboard():
         """)
     )
     stats['revenue_last_30_days'] = float(result.first()[0] or 0)
+    
+    # Add pending pickups count
+    result = db.session.execute(
+        text("SELECT COUNT(*) as total FROM reservations WHERE status = 'pending'")
+    )
+    stats['pending_pickups'] = result.first()[0]
+    
+    # Add book requests count
+    result = db.session.execute(
+        text("SELECT COUNT(*) as total FROM book_requests WHERE status = 'pending'")
+    )
+    stats['pending_book_requests'] = result.first()[0]
     
     recent_borrows = db.session.execute(
         text("""
@@ -225,6 +238,10 @@ def archive_book(book_id):
     return jsonify({'message': 'Book archived successfully'}), 200
 
 
+# ============================================================
+# MEMBERSHIP MANAGEMENT (with notification integration)
+# ============================================================
+
 @admin_bp.route('/memberships/pending', methods=['GET'])
 @jwt_required()
 @require_admin
@@ -250,12 +267,24 @@ def get_pending_memberships():
 @jwt_required()
 @require_admin
 def approve_membership(membership_id):
-    """Approve a membership request"""
+    """Approve a membership request and notify the user"""
     admin_id = int(get_jwt_identity())
     data = request.get_json()
     
     duration_months = data.get('duration_months', 12)
     card_number = f"LIB-{datetime.now().strftime('%Y%m%d')}-{membership_id:04d}"
+    expiry_date = datetime.now() + timedelta(days=30 * duration_months)
+    
+    # Get user_id from membership
+    membership = db.session.execute(
+        text("SELECT user_id FROM memberships WHERE membership_id = :mid"),
+        {'mid': membership_id}
+    ).first()
+    
+    if not membership:
+        return jsonify({'error': 'Membership not found'}), 404
+    
+    user_id = membership[0]
     
     db.session.execute(
         text("""
@@ -280,15 +309,37 @@ def approve_membership(membership_id):
     )
     db.session.commit()
     
-    return jsonify({'message': 'Membership approved', 'card_number': card_number}), 200
+    # NOTIFY: Send membership approved notification
+    NotificationService.notify_user_membership_approved(
+        user_id,
+        card_number,
+        expiry_date.strftime('%Y-%m-%d')
+    )
+    
+    return jsonify({
+        'message': 'Membership approved',
+        'card_number': card_number,
+        'expiry_date': expiry_date.strftime('%Y-%m-%d')
+    }), 200
 
 
 @admin_bp.route('/memberships/<int:membership_id>/reject', methods=['POST'])
 @jwt_required()
 @require_admin
 def reject_membership(membership_id):
-    """Reject a membership request"""
+    """Reject a membership request and notify the user"""
     admin_id = int(get_jwt_identity())
+    
+    # Get user_id before rejecting
+    membership = db.session.execute(
+        text("SELECT user_id FROM memberships WHERE membership_id = :mid"),
+        {'mid': membership_id}
+    ).first()
+    
+    if not membership:
+        return jsonify({'error': 'Membership not found'}), 404
+    
+    user_id = membership[0]
     
     db.session.execute(
         text("""
@@ -300,8 +351,15 @@ def reject_membership(membership_id):
     )
     db.session.commit()
     
+    # NOTIFY: Send membership rejected notification
+    NotificationService.notify_user_membership_rejected(user_id)
+    
     return jsonify({'message': 'Membership rejected'}), 200
 
+
+# ============================================================
+# BORROWING MANAGEMENT (with notification integration)
+# ============================================================
 
 @admin_bp.route('/borrowings', methods=['GET'])
 @jwt_required()
@@ -357,7 +415,7 @@ def get_all_borrowings():
 @jwt_required()
 @require_admin
 def approve_renewal(borrow_id):
-    """Approve a renewal request"""
+    """Approve a renewal request and notify the user"""
     admin_id = int(get_jwt_identity())
     
     result = db.session.execute(
@@ -390,15 +448,36 @@ def approve_renewal(borrow_id):
     )
     db.session.commit()
     
-    return jsonify({'message': 'Renewal approved', 'new_due_date': new_due_date.date().isoformat()}), 200
+    # NOTIFY: Send renewal approved notification to user
+    book_title = NotificationService._get_book_title(borrow['book_id'])
+    NotificationService.notify_user_renewal_approved(
+        borrow['user_id'],
+        book_title,
+        new_due_date.date().isoformat()
+    )
+    
+    return jsonify({
+        'message': 'Renewal approved',
+        'new_due_date': new_due_date.date().isoformat()
+    }), 200
 
 
 @admin_bp.route('/borrowings/<int:borrow_id>/renew/reject', methods=['POST'])
 @jwt_required()
 @require_admin
 def reject_renewal(borrow_id):
-    """Reject a renewal request"""
+    """Reject a renewal request and notify the user"""
     admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("SELECT * FROM borrowings WHERE borrow_id = :borrow_id"),
+        {'borrow_id': borrow_id}
+    ).first()
+    
+    if not result:
+        return jsonify({'error': 'Borrow record not found'}), 404
+    
+    borrow = dict(result._mapping)
     
     db.session.execute(
         text("""
@@ -412,8 +491,119 @@ def reject_renewal(borrow_id):
     )
     db.session.commit()
     
+    # NOTIFY: Send renewal rejected notification to user
+    book_title = NotificationService._get_book_title(borrow['book_id'])
+    NotificationService.notify_user_renewal_rejected(
+        borrow['user_id'],
+        book_title
+    )
+    
     return jsonify({'message': 'Renewal rejected'}), 200
 
+
+@admin_bp.route('/borrowings/confirm-pickup/<int:reservation_id>', methods=['POST'])
+@jwt_required()
+@require_admin
+def confirm_pickup(reservation_id):
+    """Admin confirms user has arrived to pick up reserved book"""
+    admin_id = int(get_jwt_identity())
+    
+    try:
+        reservation = db.session.execute(
+            text("SELECT * FROM reservations WHERE reservation_id = :rid AND status = 'pending'"),
+            {'rid': reservation_id}
+        ).first()
+        
+        if not reservation:
+            return jsonify({'error': 'Reservation not found or already processed'}), 404
+        
+        res = dict(reservation._mapping)
+        
+        # Check membership
+        has_membership = db.session.execute(
+            text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active' AND expiry_date > CURDATE()"),
+            {'uid': res['user_id']}
+        ).first()
+        
+        if not has_membership:
+            return jsonify({
+                'error': 'Membership required',
+                'message': 'User does not have an active membership.'
+            }), 400
+        
+        # Check borrow limit
+        active_borrows = db.session.execute(
+            text("SELECT COUNT(*) FROM borrowings WHERE user_id = :uid AND status NOT IN ('returned', 'lost')"),
+            {'uid': res['user_id']}
+        ).first()[0]
+        
+        if active_borrows >= 5:
+            return jsonify({
+                'error': 'Borrow limit reached',
+                'message': f'User already has {active_borrows}/5 books borrowed.'
+            }), 400
+        
+        # Check duplicate
+        already_have = db.session.execute(
+            text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned', 'lost')"),
+            {'uid': res['user_id'], 'bid': res['book_id']}
+        ).first()
+        
+        if already_have:
+            return jsonify({
+                'error': 'Already borrowed',
+                'message': 'This user already has this book borrowed.'
+            }), 400
+        
+        due_date = date.today() + timedelta(days=14)
+        
+        db.session.execute(
+            text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
+            {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
+        )
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Book issued successfully!',
+            'due_date': due_date.isoformat(),
+            'borrows_remaining': 5 - (active_borrows + 1)
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        error_msg = str(e)
+        print(f"Confirm pickup error: {error_msg}")
+        
+        if 'maximum simultaneous borrow limit' in error_msg:
+            return jsonify({
+                'error': 'Borrow limit reached',
+                'message': 'User has reached the maximum of 5 borrowed books.'
+            }), 400
+        elif 'no active membership' in error_msg:
+            return jsonify({
+                'error': 'Membership required',
+                'message': 'User does not have an active membership.'
+            }), 400
+        elif 'no available copies' in error_msg:
+            return jsonify({
+                'error': 'No copies available',
+                'message': 'This book has no available copies.'
+            }), 400
+        elif 'already have' in error_msg.lower():
+            return jsonify({
+                'error': 'Already borrowed',
+                'message': 'User already has this book.'
+            }), 400
+        else:
+            return jsonify({
+                'error': 'Failed to issue book',
+                'message': error_msg
+            }), 500
+
+
+# ============================================================
+# USER MANAGEMENT
+# ============================================================
 
 @admin_bp.route('/users', methods=['GET'])
 @jwt_required()
@@ -535,6 +725,10 @@ def activate_user(user_id):
     return jsonify({'message': 'User activated successfully'}), 200
 
 
+# ============================================================
+# STATISTICS
+# ============================================================
+
 @admin_bp.route('/stats/borrowings', methods=['GET'])
 @jwt_required()
 @require_admin
@@ -603,6 +797,10 @@ def get_revenue_stats():
     return jsonify({'monthly_revenue': monthly_stats, 'total_revenue': float(total)}), 200
 
 
+# ============================================================
+# BOOK REQUESTS (with notification integration)
+# ============================================================
+
 @admin_bp.route('/book-requests', methods=['GET'])
 @jwt_required()
 @require_admin
@@ -652,22 +850,10 @@ def approve_book_request(request_id):
         text("UPDATE book_requests SET status = 'approved', updated_at = NOW() WHERE request_id = :rid"),
         {'rid': request_id}
     )
-    
-    db.session.execute(
-        text("INSERT INTO notifications (type, title, message) VALUES ('book_request', :title, :message)"),
-        {
-            'title': 'Book Request Approved!',
-            'message': f"Your request for '{req['title']}' has been approved! The library will add this book soon."
-        }
-    )
-    
-    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
-    
-    db.session.execute(
-        text("INSERT INTO user_notifications (user_id, notification_id) VALUES (:uid, :nid)"),
-        {'uid': req['user_id'], 'nid': notification_id}
-    )
     db.session.commit()
+    
+    # NOTIFY: Use notification service
+    NotificationService.notify_user_book_request_approved(req['user_id'], req['title'])
     
     return jsonify({'message': 'Book request approved and user notified'}), 200
 
@@ -693,126 +879,17 @@ def reject_book_request(request_id):
         text("UPDATE book_requests SET status = 'rejected', updated_at = NOW() WHERE request_id = :rid"),
         {'rid': request_id}
     )
-    
-    db.session.execute(
-        text("INSERT INTO notifications (type, title, message) VALUES ('book_request', :title, :message)"),
-        {
-            'title': 'Book Request Update',
-            'message': f"Your request for '{req['title']}' could not be fulfilled at this time."
-        }
-    )
-    
-    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
-    
-    db.session.execute(
-        text("INSERT INTO user_notifications (user_id, notification_id) VALUES (:uid, :nid)"),
-        {'uid': req['user_id'], 'nid': notification_id}
-    )
     db.session.commit()
+    
+    # NOTIFY: Use notification service
+    NotificationService.notify_user_book_request_rejected(req['user_id'], req['title'])
     
     return jsonify({'message': 'Book request rejected and user notified'}), 200
 
 
-@admin_bp.route('/borrowings/confirm-pickup/<int:reservation_id>', methods=['POST'])
-@jwt_required()
-@require_admin
-def confirm_pickup(reservation_id):
-    """Admin confirms user has arrived to pick up reserved book"""
-    admin_id = int(get_jwt_identity())
-    
-    try:
-        reservation = db.session.execute(
-            text("SELECT * FROM reservations WHERE reservation_id = :rid AND status = 'pending'"),
-            {'rid': reservation_id}
-        ).first()
-        
-        if not reservation:
-            return jsonify({'error': 'Reservation not found or already processed'}), 404
-        
-        res = dict(reservation._mapping)
-        
-        # Check membership BEFORE inserting (gives better error)
-        has_membership = db.session.execute(
-            text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active' AND expiry_date > CURDATE()"),
-            {'uid': res['user_id']}
-        ).first()
-        
-        if not has_membership:
-            return jsonify({
-                'error': 'Membership required',
-                'message': 'User does not have an active membership. They need to purchase a membership first.'
-            }), 400
-        
-        # Check borrow limit BEFORE inserting (gives better error)
-        active_borrows = db.session.execute(
-            text("SELECT COUNT(*) FROM borrowings WHERE user_id = :uid AND status NOT IN ('returned', 'lost')"),
-            {'uid': res['user_id']}
-        ).first()[0]
-        
-        if active_borrows >= 5:
-            return jsonify({
-                'error': 'Borrow limit reached',
-                'message': f'User already has {active_borrows}/5 books borrowed. They must return at least one book first.'
-            }), 400
-        
-        # Check if they already have this book
-        already_have = db.session.execute(
-            text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned', 'lost')"),
-            {'uid': res['user_id'], 'bid': res['book_id']}
-        ).first()
-        
-        if already_have:
-            return jsonify({
-                'error': 'Already borrowed',
-                'message': 'This user already has this book borrowed.'
-            }), 400
-        
-        due_date = date.today() + timedelta(days=14)
-        
-        db.session.execute(
-            text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
-            {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
-        )
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Book issued successfully!',
-            'due_date': due_date.isoformat(),
-            'borrows_remaining': 5 - (active_borrows + 1)
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        error_msg = str(e)
-        print(f"Confirm pickup error: {error_msg}")
-        
-        # Map trigger messages to user-friendly responses
-        if 'maximum simultaneous borrow limit' in error_msg or 'max' in error_msg.lower() and 'borrow' in error_msg.lower():
-            return jsonify({
-                'error': 'Borrow limit reached',
-                'message': 'User has reached the maximum of 5 borrowed books.'
-            }), 400
-        elif 'no active membership' in error_msg or 'membership' in error_msg.lower():
-            return jsonify({
-                'error': 'Membership required',
-                'message': 'User does not have an active membership.'
-            }), 400
-        elif 'no available copies' in error_msg or 'available' in error_msg.lower():
-            return jsonify({
-                'error': 'No copies available',
-                'message': 'This book has no available copies.'
-            }), 400
-        elif 'already have' in error_msg.lower() or 'duplicate' in error_msg.lower():
-            return jsonify({
-                'error': 'Already borrowed',
-                'message': 'User already has this book.'
-            }), 400
-        else:
-            return jsonify({
-                'error': 'Failed to issue book',
-                'message': error_msg
-            }), 500
-    
+# ============================================================
+# ADMIN NOTIFICATIONS
+# ============================================================
 
 @admin_bp.route('/notifications', methods=['GET'])
 @jwt_required()

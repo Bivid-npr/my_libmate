@@ -4,30 +4,9 @@ from sqlalchemy import text
 from datetime import datetime, date, timedelta
 from ..extensions import db
 from ..utils.auth_utils import require_user
-from ..api.socket_events import notify_admins_socket  # ADD THIS
+from ..services.notification_service import NotificationService
 
 borrowings_bp = Blueprint('borrowings', __name__)
-
-
-def _notify_admins(title, message, notification_type='book_request'):
-    """Helper: Send notification to all active admins (DB + WebSocket)"""
-    db.session.execute(
-        text("INSERT INTO notifications (type, title, message) VALUES (:type, :title, :message)"),
-        {'type': notification_type, 'title': title, 'message': message}
-    )
-    notification_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
-    
-    db.session.execute(
-        text("INSERT INTO admin_notifications (admin_id, notification_id) SELECT admin_id, :nid FROM admins WHERE is_active = TRUE"),
-        {'nid': notification_id}
-    )
-    
-    # Send real-time WebSocket notification
-    notify_admins_socket({
-        'title': title,
-        'message': message,
-        'type': notification_type
-    })
 
 
 @borrowings_bp.route('', methods=['GET'])
@@ -84,7 +63,7 @@ def get_borrow_history():
 @jwt_required()
 @require_user
 def request_pickup(book_id):
-    """Creates 48-hour pickup reservation and notifies admins via WebSocket"""
+    """Creates 48-hour pickup reservation and notifies admins"""
     user_id = int(get_jwt_identity())
     
     membership = db.session.execute(
@@ -134,20 +113,10 @@ def request_pickup(book_id):
         text("UPDATE books SET available_copies = available_copies - 1 WHERE book_id = :bid AND available_copies > 0"),
         {'bid': book_id}
     )
-    
-    # Notify admins about new pickup (DB + WebSocket)
-    user_info = db.session.execute(
-        text("SELECT full_name FROM users WHERE user_id = :uid"),
-        {'uid': user_id}
-    ).first()
-    
-    _notify_admins(
-        'New Pickup Reservation',
-        f"{user_info[0]} has reserved '{book_data['title']}' for pickup. Expires in 48 hours.",
-        'book_request'
-    )
-    
     db.session.commit()
+    
+    # NOTIFY: Admins about new pickup reservation
+    NotificationService.notify_admins_new_pickup(user_id, book_data['title'])
     
     return jsonify({
         'message': 'Book reserved for pickup! Please visit the library counter within 48 hours.',
@@ -159,7 +128,7 @@ def request_pickup(book_id):
 @jwt_required()
 @require_user
 def request_renewal(borrow_id):
-    """Request renewal for a borrowed book and notify admins via WebSocket"""
+    """Request renewal for a borrowed book and notify admins"""
     user_id = int(get_jwt_identity())
     
     result = db.session.execute(
@@ -187,24 +156,12 @@ def request_renewal(borrow_id):
         text("UPDATE borrowings SET renewal_requested = TRUE, renewal_status = 'pending', updated_at = NOW() WHERE borrow_id = :bid"),
         {'bid': borrow_id}
     )
-    
-    # Notify admins about renewal request (DB + WebSocket)
-    user_info = db.session.execute(
-        text("SELECT full_name FROM users WHERE user_id = :uid"),
-        {'uid': user_id}
-    ).first()
-    book_info = db.session.execute(
-        text("SELECT title FROM books WHERE book_id = :bid"),
-        {'bid': borrow['book_id']}
-    ).first()
-    
-    _notify_admins(
-        'Renewal Request',
-        f"{user_info[0]} requested renewal for '{book_info[0]}'.",
-        'renewal_request'
-    )
-    
     db.session.commit()
+    
+    # NOTIFY: Admins about renewal request
+    book_title = NotificationService._get_book_title(borrow['book_id'])
+    NotificationService.notify_admins_renewal_request(user_id, book_title)
+    
     return jsonify({'message': 'Renewal request submitted successfully'}), 200
 
 
@@ -315,7 +272,9 @@ def reserve_book(book_id):
     return jsonify({'message': 'Book reserved successfully! You will be notified when available.'}), 201
 
 
-# ============ RESERVATION QUEUE ENDPOINTS ============
+# ============================================================
+# RESERVATION QUEUE ENDPOINTS
+# ============================================================
 
 @borrowings_bp.route('/reservations/all', methods=['GET'])
 @jwt_required()
