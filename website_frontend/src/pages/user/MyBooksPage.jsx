@@ -180,8 +180,16 @@ const MyBooksPage = () => {
                       <div className="flex flex-col sm:flex-row gap-4">
                         {/* Book Cover */}
                         <Link to={`/book/${book.book_id}`} className="sm:w-[80px] flex-shrink-0">
-                          <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2">
-                            <span className="text-white text-[10px] font-serif font-semibold line-clamp-2">{book.book_title || book.title}</span>
+                          <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2 overflow-hidden relative">
+                            {book.cover_image && (
+                              <img 
+                                src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                                alt={book.book_title || book.title}
+                                className="absolute inset-0 w-full h-full object-cover"
+                                onError={(e) => { e.target.style.display = 'none'; }}
+                              />
+                            )}
+                            <span className="text-white text-[10px] font-serif font-semibold line-clamp-2 z-10">{book.book_title || book.title}</span>
                           </div>
                         </Link>
                         
@@ -334,8 +342,16 @@ const MyBooksPage = () => {
                 <div key={book.reservation_id} className="bg-white rounded-xl p-5 shadow-sm border border-[#EAE0D0] hover:shadow-md transition-shadow">
                   <div className="flex flex-col sm:flex-row gap-4">
                     <Link to={`/book/${book.book_id}`} className="sm:w-[80px] flex-shrink-0">
-                      <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2">
-                        <span className="text-white text-[10px] font-serif font-semibold line-clamp-2">{book.title}</span>
+                      <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2 overflow-hidden relative">
+                        {book.cover_image && (
+                          <img 
+                            src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                            alt={book.title}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        )}
+                        <span className="text-white text-[10px] font-serif font-semibold line-clamp-2 z-10">{book.title}</span>
                       </div>
                     </Link>
                     
@@ -388,6 +404,15 @@ const MyBooksPage = () => {
                   <div key={book.book_id} className="group">
                     <Link to={`/book/${book.book_id}`} className="block">
                       <div className="book-cover w-full h-[230px] rounded-[12px] flex items-end p-3 relative overflow-hidden shadow-md transition-transform duration-250 hover:-translate-y-1.5 hover:shadow-xl bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
+                          {book.cover_image && (
+                            <img 
+                              src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                              alt={book.title}
+                              className="absolute inset-0 w-full h-full object-cover"
+                              loading="lazy"
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          )}
                         <div className="absolute top-0 left-0 right-0 h-[40%] bg-gradient-to-b from-white/15 to-transparent rounded-t-[12px]"></div>
                         
                         <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-semibold z-10 ${

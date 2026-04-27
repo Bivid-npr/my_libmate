@@ -39,6 +39,16 @@ const BookGridCard = ({ book }) => {
       onClick={() => window.location.href = `/book/${book.book_id}`}
     >
       <div className="book-cover w-full h-[230px] rounded-[12px] flex items-end p-3 relative overflow-hidden shadow-md transition-shadow duration-250 hover:shadow-xl bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
+        {/* ADD COVER IMAGE */}
+        {book.cover_image && (
+          <img 
+            src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+            alt={book.title}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+        )}
         <div className="absolute top-0 left-0 right-0 h-[40%] bg-gradient-to-b from-white/15 to-transparent rounded-t-[12px]"></div>
         <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-semibold z-10 ${status.color} text-white`}>
           {status.label}
@@ -77,6 +87,16 @@ const BookListCard = ({ book }) => (
   <div className="book-list-item flex gap-4 p-2.5 bg-[#F3EDE3] border border-[#EAE0D0] rounded-[12px] cursor-pointer hover:shadow-md hover:border-[#C4895A] transition-all" onClick={() => window.location.href = `/book/${book.book_id}`}>
     {/* Cover Image */}
     <div className="list-cover w-[100px] h-[150px] rounded-lg flex items-end p-2 overflow-hidden relative shadow-md flex-shrink-0 bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
+      {/* ADD COVER IMAGE */}
+      {book.cover_image && (
+        <img 
+          src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+          alt={book.title}
+          className="absolute inset-0 w-full h-full object-cover rounded-lg"
+          loading="lazy"
+          onError={(e) => { e.target.style.display = 'none'; }}
+        />
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent rounded-lg"></div>
       <span className="list-cover-title font-serif text-[10px] text-white/90 font-semibold leading-tight z-10 line-clamp-2">{book.title}</span>
     </div>

@@ -60,7 +60,7 @@ const HeroCarousel = () => {
                 return { ...book, short_description: book.description.length > 200 ? book.description.substring(0, 200) + '...' : book.description };
               }
               const fullBook = await booksAPI.getBook(book.book_id);
-              return { ...book, description: fullBook.book?.description, short_description: fullBook.book?.description ? fullBook.book.description.substring(0, 200) + '...' : 'No description available.' };
+              return { ...book, description: fullBook.book?.description, cover_image: fullBook.book?.cover_image || book.cover_image, short_description: fullBook.book?.description ? fullBook.book.description.substring(0, 200) + '...' : 'No description available.' };
             } catch (error) { return { ...book, short_description: 'No description available.' }; }
           })
         );
@@ -192,13 +192,26 @@ const HeroCarousel = () => {
                     {book.available_copies > 0 && isAuthenticated && (
                       <button onClick={() => handleBorrowNow(book)}
                         className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#4A7C59] text-white rounded-full text-sm font-medium hover:bg-[#5A8E69] transition-all duration-200 hover:scale-105">
-                        <FaBookOpen size={14} />Book Now
+                        <FaBookOpen size={14} />Reserve for Pickup
                       </button>
                     )}
                   </div>
                 </div>
-                <div className="hidden md:block w-64 h-96 bg-gradient-to-br from-[#C4895A]/20 to-[#D4A574]/10 rounded-xl shadow-2xl flex items-center justify-center border border-white/10">
-                  <div className="text-center"><FaBook className="text-6xl text-white/30 mx-auto mb-3" /><p className="text-white/40 text-sm">Book Cover</p></div>
+                {/* Book Cover - Shows cover image or gradient fallback */}
+                <div className="hidden md:block w-64 h-96 bg-gradient-to-br from-[#C4895A]/20 to-[#D4A574]/10 rounded-xl shadow-2xl flex items-center justify-center border border-white/10 overflow-hidden relative">
+                  {book.cover_image ? (
+                    <img 
+                      src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                      alt={book.title}
+                      className="absolute inset-0 w-full h-full object-cover rounded-xl"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <FaBook className="text-6xl text-white/30 mx-auto mb-3" />
+                      <p className="text-white/40 text-sm">Book Cover</p>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -220,7 +233,6 @@ const HeroCarousel = () => {
         <div className="absolute top-4 right-4 z-20 bg-black/30 backdrop-blur-sm rounded-full px-3 py-1 text-xs text-white/80">{currentIndex + 1} / {slides.length}</div>
       </div>
 
-      {/* Pickup Confirmation Modal */}
       {showPickupModal && borrowingBook && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
@@ -230,23 +242,11 @@ const HeroCarousel = () => {
                 <h3 className="font-serif text-xl font-bold text-[#2C1F14] mb-2">Confirm Pickup Reservation</h3>
                 <p className="text-sm text-[#9A8478]">You are about to reserve this book for pickup</p>
               </div>
-              <div className="bg-[#F3EDE3] rounded-lg p-4 mb-4">
-                <p className="font-semibold text-[#2C1F14]">{borrowingBook.title}</p>
-                <p className="text-sm text-[#9A8478]">by {borrowingBook.author}</p>
-              </div>
+              <div className="bg-[#F3EDE3] rounded-lg p-4 mb-4"><p className="font-semibold text-[#2C1F14]">{borrowingBook.title}</p><p className="text-sm text-[#9A8478]">by {borrowingBook.author}</p></div>
               <div className="space-y-3 mb-6">
-                <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <FaClock className="text-amber-600 mt-0.5 flex-shrink-0" size={16} />
-                  <div><p className="text-sm font-medium text-amber-800">48-Hour Pickup Window</p><p className="text-xs text-amber-700">Visit the library counter within 48 hours. Reservation expires automatically.</p></div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <FaUser className="text-blue-600 mt-0.5 flex-shrink-0" size={16} />
-                  <div><p className="text-sm font-medium text-blue-800">Library Counter Visit Required</p><p className="text-xs text-blue-700">Bring your membership card. The librarian will complete the process.</p></div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <FaCalendarAlt className="text-green-600 mt-0.5 flex-shrink-0" size={16} />
-                  <div><p className="text-sm font-medium text-green-800">14-Day Borrowing Period</p><p className="text-xs text-green-700">Once issued, keep the book for 14 days. Renewals available.</p></div>
-                </div>
+                <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg"><FaClock className="text-amber-600 mt-0.5 flex-shrink-0" size={16} /><div><p className="text-sm font-medium text-amber-800">48-Hour Pickup Window</p><p className="text-xs text-amber-700">Visit the library counter within 48 hours.</p></div></div>
+                <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"><FaUser className="text-blue-600 mt-0.5 flex-shrink-0" size={16} /><div><p className="text-sm font-medium text-blue-800">Library Counter Visit Required</p><p className="text-xs text-blue-700">Bring your membership card.</p></div></div>
+                <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg"><FaCalendarAlt className="text-green-600 mt-0.5 flex-shrink-0" size={16} /><div><p className="text-sm font-medium text-green-800">14-Day Borrowing Period</p><p className="text-xs text-green-700">Once issued, keep for 14 days.</p></div></div>
               </div>
               <div className="flex gap-3">
                 <button onClick={() => { setShowPickupModal(false); setBorrowingBook(null); }} className="flex-1 px-4 py-2.5 border border-[#EAE0D0] rounded-lg hover:bg-gray-50 transition text-sm font-medium">Cancel</button>

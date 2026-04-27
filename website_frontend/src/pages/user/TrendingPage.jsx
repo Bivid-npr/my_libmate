@@ -32,6 +32,16 @@ const TrendingBookCard = ({ book }) => {
     >
       <div className="relative">
         <div className="book-cover w-full h-[230px] rounded-[12px] flex items-end p-3 relative overflow-hidden shadow-md transition-shadow duration-250 hover:shadow-xl bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
+          {/* ADD COVER IMAGE */}
+          {book.cover_image && (
+            <img 
+              src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+              alt={book.title}
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          )}
           <div className="absolute top-0 left-0 right-0 h-[40%] bg-gradient-to-b from-white/15 to-transparent rounded-t-[12px]"></div>
           
           {book.trend_rank && book.trend_rank <= 3 && (
@@ -147,7 +157,12 @@ const Top10List = ({ books, period, onPeriodChange, loading }) => {
                 </div>
                 <div className="w-14 h-20 rounded-md bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex-shrink-0 overflow-hidden shadow-sm">
                   {book.cover_image ? (
-                    <img src={book.cover_image} alt={book.title} className="w-full h-full object-cover" />
+                      <img 
+                        src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                        alt={book.title}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <FaBook size={20} className="text-white/30" />
