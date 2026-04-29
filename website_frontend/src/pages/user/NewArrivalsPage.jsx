@@ -187,7 +187,7 @@ const NewArrivalsPage = () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await newArrivalsAPI.getNewArrivals(currentPage, 15);
+        const data = await newArrivalsAPI.getNewArrivals(currentPage, 18);
         setBooks(data.books || []);
         setTotalPages(data.total_pages || 1);
         setTotalBooks(data.total || 0);
