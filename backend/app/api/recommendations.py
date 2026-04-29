@@ -17,20 +17,35 @@ def get_recommendations():
     limit = request.args.get('limit', 10, type=int)
     
     # Try to get stored recommendations
-    query = """
-        SELECT * FROM vw_recommendations
-        WHERE user_id = :user_id
-        ORDER BY similarity_score DESC
-        LIMIT :limit
-    """
-    
     result = db.session.execute(
-        text(query),
+        text("""
+            SELECT * FROM vw_recommendations
+            WHERE user_id = :user_id
+            ORDER BY similarity_score DESC
+            LIMIT :limit
+        """),
         {'user_id': user_id, 'limit': limit}
     )
     recommendations = [dict(row._mapping) for row in result]
     
-    # If no recommendations, fall back to trending books
+    # If no recommendations, generate them now using AI
+    if not recommendations:
+        from ..services.recommendation_service import RecommendationService
+        RecommendationService.generate_recommendations_for_user(user_id, limit)
+        
+        # Fetch again after generation
+        result = db.session.execute(
+            text("""
+                SELECT * FROM vw_recommendations
+                WHERE user_id = :user_id
+                ORDER BY similarity_score DESC
+                LIMIT :limit
+            """),
+            {'user_id': user_id, 'limit': limit}
+        )
+        recommendations = [dict(row._mapping) for row in result]
+    
+    # If still empty, fall back to trending
     if not recommendations:
         fallback = db.session.execute(
             text("""

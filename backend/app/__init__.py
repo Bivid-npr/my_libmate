@@ -7,6 +7,9 @@ import os
 import bcrypt
 from datetime import timedelta
 from sqlalchemy import text
+import schedule
+import threading
+import time
 
 from .extensions import db
 from .config import Config
@@ -81,40 +84,73 @@ def create_app(config_class=Config):
     def internal_error(error):
         db.session.rollback()
         return jsonify({'error': 'Internal server error'}), 500
-    
-    # Direct smoke alert endpoint (no auth - for IoT device)
+
     @app.route('/api/smoke-alert', methods=['POST'])
     def smoke_alert_public():
         from .api.admin import receive_smoke_alert
         return receive_smoke_alert()
 
     base = os.path.dirname(os.path.abspath(__file__))
-    for folder in ['uploads/photos', 'uploads/receipts']:
+    for folder in ['uploads/photos', 'uploads/receipts', 'uploads/covers']:
         os.makedirs(os.path.join(base, folder), exist_ok=True)
 
+    # Seed flags
     _admin_seeded = False
+    _trending_seeded = False
 
     @app.before_request
-    def seed_default_admin():
-        nonlocal _admin_seeded
-        if _admin_seeded or request.path.startswith('/socket.io'):
+    def seed_on_first_request():
+        nonlocal _admin_seeded, _trending_seeded
+        if request.path.startswith('/socket.io'):
             return
-        _admin_seeded = True
 
-        try:
-            count = db.session.execute(text("SELECT COUNT(*) FROM admins")).first()[0]
-            if count == 0:
-                email = os.getenv('DEFAULT_ADMIN_EMAIL', 'admin@libmate.com')
-                password = os.getenv('DEFAULT_ADMIN_PASSWORD', 'admin123')
-                hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        # Seed default admin
+        if not _admin_seeded:
+            _admin_seeded = True
+            try:
+                count = db.session.execute(text("SELECT COUNT(*) FROM admins")).first()[0]
+                if count == 0:
+                    email = os.getenv('DEFAULT_ADMIN_EMAIL', 'admin@libmate.com')
+                    password = os.getenv('DEFAULT_ADMIN_PASSWORD', 'admin123')
+                    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    db.session.execute(
+                        text("INSERT INTO admins (full_name, email, phone, password_hash, is_active) VALUES (:n,:e,:p,:h,TRUE)"),
+                        {'n': 'Super Admin', 'e': email, 'p': '', 'h': hashed}
+                    )
+                    db.session.commit()
+                    print(f"[OK] Default admin created: {email}")
+            except Exception as e:
+                print(f"[INFO] Admin seed skipped: {e}")
 
-                db.session.execute(
-                    text("INSERT INTO admins (full_name, email, phone, password_hash, is_active) VALUES (:name, :email, :phone, :hash, TRUE)"),
-                    {'name': 'Super Admin', 'email': email, 'phone': '', 'hash': hashed}
-                )
-                db.session.commit()
-                print(f"[OK] Default admin created: {email}")
-        except Exception as e:
-            print(f"[INFO] Admin seed skipped: {e}")
+        # Seed trending
+        if not _trending_seeded:
+            _trending_seeded = True
+            try:
+                from .services.recommendation_service import RecommendationService
+                count = db.session.execute(text("SELECT COUNT(*) FROM trending_books")).first()[0]
+                if count == 0:
+                    RecommendationService.update_trending_books()
+                    print("[OK] Initial trending data generated")
+            except Exception as e:
+                print(f"[INFO] Trending seed skipped: {e}")
+
+    # Scheduler
+    from .services.recommendation_service import RecommendationService
+    from .services.notification_service import NotificationService
+    from .services.email_service import send_due_date_reminder_emails, send_overdue_notice_emails
+
+    schedule.every().day.at("03:00").do(RecommendationService.update_trending_books)
+    schedule.every().day.at("09:00").do(NotificationService.send_due_date_reminders)
+    schedule.every().day.at("09:00").do(NotificationService.send_overdue_notices)
+    schedule.every().day.at("09:00").do(NotificationService.send_membership_expiry_warnings)
+    schedule.every().day.at("09:00").do(send_due_date_reminder_emails)
+    schedule.every().day.at("09:00").do(send_overdue_notice_emails)
+
+    def run_scheduler():
+        while True:
+            schedule.run_pending()
+            time.sleep(60)
+
+    threading.Thread(target=run_scheduler, daemon=True).start()
 
     return app

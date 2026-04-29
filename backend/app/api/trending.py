@@ -7,31 +7,45 @@ trending_bp = Blueprint('trending', __name__)
 
 @trending_bp.route('', methods=['GET'])
 def get_trending():
-    """Get trending books for carousel/homepage - returns books with highest borrow count"""
+    """Get trending books from trending_books table"""
     limit = request.args.get('limit', 10, type=int)
     
     query = """
         SELECT 
-            b.book_id,
-            b.title,
-            b.author,
-            b.genre,
-            b.cover_image,
-            b.available_copies,
-            b.status,
-            b.total_borrow_count,
+            b.book_id, b.title, b.author, b.genre, b.cover_image,
+            b.available_copies, b.status, b.total_borrow_count,
             COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
             COUNT(DISTINCT r.review_id) AS total_reviews
-        FROM books b
+        FROM trending_books t
+        JOIN books b ON t.book_id = b.book_id
         LEFT JOIN reviews r ON b.book_id = r.book_id
         WHERE b.is_archived = FALSE
-        GROUP BY b.book_id
-        ORDER BY b.total_borrow_count DESC
+        GROUP BY b.book_id, t.trend_rank
+        ORDER BY t.trend_rank ASC
         LIMIT :limit
     """
     
     result = db.session.execute(text(query), {'limit': limit})
     trending = [dict(row._mapping) for row in result]
+    
+    # Fallback: if trending is empty (no data yet), show popular books
+    if not trending:
+        fallback = db.session.execute(
+            text("""
+                SELECT b.book_id, b.title, b.author, b.genre, b.cover_image,
+                       b.available_copies, b.status, b.total_borrow_count,
+                       COALESCE(ROUND(AVG(r.rating), 1), 0) AS avg_rating,
+                       COUNT(DISTINCT r.review_id) AS total_reviews
+                FROM books b
+                LEFT JOIN reviews r ON b.book_id = r.book_id
+                WHERE b.is_archived = FALSE
+                GROUP BY b.book_id
+                ORDER BY b.total_borrow_count DESC
+                LIMIT :limit
+            """),
+            {'limit': limit}
+        )
+        trending = [dict(row._mapping) for row in fallback]
     
     return jsonify(trending), 200
 

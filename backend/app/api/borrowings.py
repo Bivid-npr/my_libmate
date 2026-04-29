@@ -5,6 +5,8 @@ from datetime import datetime, date, timedelta
 from ..extensions import db
 from ..utils.auth_utils import require_user
 from ..services.notification_service import NotificationService
+from ..services.recommendation_service import RecommendationService
+
 
 borrowings_bp = Blueprint('borrowings', __name__)
 
@@ -117,6 +119,9 @@ def request_pickup(book_id):
     
     # NOTIFY: Admins about new pickup reservation
     NotificationService.notify_admins_new_pickup(user_id, book_data['title'])
+    # Trigger recommendation update for user 
+    RecommendationService.generate_recommendations_for_user(user_id)
+
     
     return jsonify({
         'message': 'Book reserved for pickup! Please visit the library counter within 48 hours.',

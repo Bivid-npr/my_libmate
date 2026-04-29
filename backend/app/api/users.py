@@ -5,6 +5,8 @@ from ..extensions import db
 from ..utils.auth_utils import require_user
 import os
 from datetime import datetime
+from ..services.recommendation_service import RecommendationService
+
 
 users_bp = Blueprint('users', __name__)
 
@@ -241,6 +243,9 @@ def add_to_wishlist(book_id):
         {'user_id': user_id, 'book_id': book_id}
     )
     db.session.commit()
+
+    # Trigger recommendation update for user after adding to wishlist
+    RecommendationService.generate_recommendations_for_user(user_id)
     
     return jsonify({'message': 'Added to wishlist'}), 201
 
