@@ -29,7 +29,6 @@ eggs/
 .env
 .env.local
 .env.production
-.env.*
 
 # Flask instance folder
 instance/
