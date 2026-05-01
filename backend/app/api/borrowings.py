@@ -98,7 +98,7 @@ def request_pickup(book_id):
         {'uid': user_id, 'bid': book_id}
     ).first()
     if pending:
-        return jsonify({'error': 'You already have a pending pickup reservation'}), 409
+        return jsonify({'error': 'You already have a pending reservation for this book'}), 409
     
     count = db.session.execute(
         text("SELECT COUNT(*) as c FROM borrowings WHERE user_id = :uid AND status NOT IN ('returned','lost')"),
@@ -108,7 +108,7 @@ def request_pickup(book_id):
         return jsonify({'error': 'Maximum borrow limit (5 books) reached'}), 400
     
     db.session.execute(
-        text("INSERT INTO reservations (user_id, book_id, expires_at, status) VALUES (:uid, :bid, DATE_ADD(NOW(), INTERVAL 48 HOUR), 'pending')"),
+        text("INSERT INTO reservations (user_id, book_id, expires_at, status, reservation_type) VALUES (:uid, :bid, DATE_ADD(NOW(), INTERVAL 48 HOUR), 'pending', 'pickup')"),
         {'uid': user_id, 'bid': book_id}
     )
     db.session.execute(
@@ -117,11 +117,8 @@ def request_pickup(book_id):
     )
     db.session.commit()
     
-    # NOTIFY: Admins about new pickup reservation
     NotificationService.notify_admins_new_pickup(user_id, book_data['title'])
-    # Trigger recommendation update for user 
     RecommendationService.generate_recommendations_for_user(user_id)
-
     
     return jsonify({
         'message': 'Book reserved for pickup! Please visit the library counter within 48 hours.',
@@ -163,7 +160,6 @@ def request_renewal(borrow_id):
     )
     db.session.commit()
     
-    # NOTIFY: Admins about renewal request
     book_title = NotificationService._get_book_title(borrow['book_id'])
     NotificationService.notify_admins_renewal_request(user_id, book_title)
     
@@ -189,6 +185,9 @@ def return_book(borrow_id):
         {'bid': borrow_id}
     )
     db.session.commit()
+    
+    RecommendationService.generate_recommendations_for_user(user_id)
+    
     return jsonify({'message': 'Book returned successfully'}), 200
 
 
@@ -270,7 +269,7 @@ def reserve_book(book_id):
         return jsonify({'error': 'You already have a pending reservation for this book'}), 409
     
     db.session.execute(
-        text("INSERT INTO reservations (user_id, book_id, expires_at, status) VALUES (:uid, :bid, NULL, 'pending')"),
+        text("INSERT INTO reservations (user_id, book_id, expires_at, status, reservation_type) VALUES (:uid, :bid, NULL, 'pending', 'waitlist')"),
         {'uid': user_id, 'bid': book_id}
     )
     db.session.commit()
@@ -284,6 +283,7 @@ def reserve_book(book_id):
 @borrowings_bp.route('/reservations/all', methods=['GET'])
 @jwt_required()
 def get_all_reservations():
+    """Get pending PICKUP reservations (48-hour window)"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -294,17 +294,17 @@ def get_all_reservations():
             FROM reservations r
             JOIN users u ON r.user_id = u.user_id
             JOIN books b ON r.book_id = b.book_id
-            WHERE r.status = 'pending'
-            ORDER BY r.reserved_at ASC
+            WHERE r.status = 'pending' AND r.reservation_type = 'pickup'
+            ORDER BY r.expires_at ASC
         """)
     )
-    reservations = [dict(row._mapping) for row in result]
-    return jsonify(reservations), 200
+    return jsonify([dict(row._mapping) for row in result]), 200
 
 
 @borrowings_bp.route('/reservations/queue', methods=['GET'])
 @jwt_required()
 def get_reservation_queue():
+    """Get WAITLIST reservations grouped by book"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -317,18 +317,18 @@ def get_reservation_queue():
                 MIN(r.reserved_at) as earliest_reservation
             FROM books b
             JOIN reservations r ON b.book_id = r.book_id
-            WHERE r.status = 'pending'
+            WHERE r.status = 'pending' AND r.reservation_type = 'waitlist'
             GROUP BY b.book_id, b.title, b.author, b.available_copies, b.total_copies
             ORDER BY earliest_reservation ASC
         """)
     )
-    books_with_queue = [dict(row._mapping) for row in result]
-    return jsonify(books_with_queue), 200
+    return jsonify([dict(row._mapping) for row in result]), 200
 
 
 @borrowings_bp.route('/reservations/queue/<int:book_id>', methods=['GET'])
 @jwt_required()
 def get_book_reservation_queue(book_id):
+    """Get WAITLIST for a specific book"""
     claims = get_jwt()
     if claims.get('type') != 'admin':
         return jsonify({'error': 'Admin access required'}), 403
@@ -339,17 +339,17 @@ def get_book_reservation_queue(book_id):
                    ROW_NUMBER() OVER (ORDER BY r.reserved_at ASC) as queue_position
             FROM reservations r
             JOIN users u ON r.user_id = u.user_id
-            WHERE r.book_id = :bid AND r.status = 'pending'
+            WHERE r.book_id = :bid AND r.status = 'pending' AND r.reservation_type = 'waitlist'
             ORDER BY r.reserved_at ASC
         """),
         {'bid': book_id}
     )
-    queue = [dict(row._mapping) for row in result]
-    return jsonify(queue), 200
+    return jsonify([dict(row._mapping) for row in result]), 200
 
 
 @borrowings_bp.route('/reservations/book/<int:book_id>', methods=['GET'])
 def get_book_reservations_public(book_id):
+    """Public view: show WAITLIST queue for a book"""
     result = db.session.execute(
         text("""
             SELECT r.reservation_id, r.user_id, r.reserved_at, r.status,
@@ -357,19 +357,19 @@ def get_book_reservations_public(book_id):
                    ROW_NUMBER() OVER (ORDER BY r.reserved_at ASC) as queue_position
             FROM reservations r
             JOIN users u ON r.user_id = u.user_id
-            WHERE r.book_id = :bid AND r.status = 'pending'
+            WHERE r.book_id = :bid AND r.status = 'pending' AND r.reservation_type = 'waitlist'
             ORDER BY r.reserved_at ASC
         """),
         {'bid': book_id}
     )
-    queue = [dict(row._mapping) for row in result]
-    return jsonify(queue), 200
+    return jsonify([dict(row._mapping) for row in result]), 200
 
 
 @borrowings_bp.route('/reservations', methods=['GET'])
 @jwt_required()
 @require_user
 def get_my_reservations():
+    """Get current user's reservations"""
     user_id = int(get_jwt_identity())
     
     result = db.session.execute(
@@ -382,14 +382,14 @@ def get_my_reservations():
         """),
         {'user_id': user_id}
     )
-    reservations = [dict(row._mapping) for row in result]
-    return jsonify(reservations), 200
+    return jsonify([dict(row._mapping) for row in result]), 200
 
 
 @borrowings_bp.route('/reservations/<int:reservation_id>/cancel', methods=['POST'])
 @jwt_required()
 @require_user
 def cancel_reservation(reservation_id):
+    """Cancel a reservation"""
     user_id = int(get_jwt_identity())
     
     reservation = db.session.execute(
@@ -405,9 +405,13 @@ def cancel_reservation(reservation_id):
         text("UPDATE reservations SET status = 'cancelled' WHERE reservation_id = :rid"),
         {'rid': reservation_id}
     )
-    db.session.execute(
-        text("UPDATE books SET available_copies = available_copies + 1 WHERE book_id = :bid AND available_copies < total_copies"),
-        {'bid': res['book_id']}
-    )
+    
+    # Only restore copy if it was a pickup (not waitlist)
+    if res.get('reservation_type') == 'pickup':
+        db.session.execute(
+            text("UPDATE books SET available_copies = available_copies + 1 WHERE book_id = :bid AND available_copies < total_copies"),
+            {'bid': res['book_id']}
+        )
+    
     db.session.commit()
     return jsonify({'message': 'Reservation cancelled successfully'}), 200

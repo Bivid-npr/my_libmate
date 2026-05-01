@@ -106,6 +106,7 @@ def register():
     email = data.get('email', '').strip()
     password = data.get('password', '')
     full_name = data.get('full_name', '').strip()
+    phone = data.get('phone', '').strip()
     
     if not email or not password or not full_name:
         return jsonify({'error': 'Email, password, and full name required'}), 400
@@ -116,7 +117,7 @@ def register():
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
     
-    # Check existing
+    # Check if email already exists
     for table, field in [('users', 'user_id'), ('admins', 'admin_id')]:
         exists = db.session.execute(
             text(f"SELECT {field} FROM {table} WHERE email = :email"),
@@ -125,6 +126,40 @@ def register():
         if exists:
             return jsonify({'error': 'Email already in use'}), 409
     
+    # Check if phone matches an existing offline member — link accounts
+    if phone:
+        offline = db.session.execute(
+            text("""
+                SELECT u.user_id, u.full_name
+                FROM users u
+                JOIN memberships m ON u.user_id = m.user_id AND m.status = 'active'
+                WHERE u.phone = :p AND u.email LIKE '%@libmate.local'
+                LIMIT 1
+            """),
+            {'p': phone}
+        ).first()
+        
+        if offline:
+            hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            db.session.execute(
+                text("UPDATE users SET email = :e, password_hash = :h, full_name = :n, updated_at = NOW() WHERE user_id = :uid"),
+                {'e': email, 'h': hashed, 'n': full_name, 'uid': offline[0]}
+            )
+            db.session.commit()
+            
+            user = db.session.execute(
+                text("SELECT * FROM users WHERE user_id = :uid"), {'uid': offline[0]}
+            ).first()
+            user = dict(user._mapping)
+            
+            token = _create_token(user['user_id'], 'user')
+            return jsonify({
+                'token': token,
+                'user': _build_user_data(user),
+                'message': f'Welcome back, {user["full_name"]}! Your existing membership has been linked.'
+            }), 200
+    
+    # Normal registration
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     db.session.execute(
@@ -135,7 +170,7 @@ def register():
         {
             'full_name': full_name,
             'email': email,
-            'phone': data.get('phone'),
+            'phone': phone,
             'address': data.get('address'),
             'password_hash': hashed
         }

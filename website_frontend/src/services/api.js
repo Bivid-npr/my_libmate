@@ -159,6 +159,15 @@ export const recommendationsAPI = {
 // ============ ADMIN API ============
 export const adminAPI = {
   getDashboard: () => apiRequest('/admin/dashboard'),
+  createMembership: (userId, durationMonths = 12, userData = null) => {
+    const body = userData || { user_id: userId, duration_months: durationMonths };
+    return apiRequest('/admin/memberships/create', { method: 'POST', body: JSON.stringify(body) });
+  },
+  getAllMemberships: (status = null) => {
+    let url = '/admin/memberships/all';
+    if (status && status !== 'all') url += `?status=${status}`;
+    return apiRequest(url);
+  },
   getPendingMemberships: () => apiRequest('/admin/memberships/pending'),
   approveMembership: (id, duration = 12) => 
     apiRequest(`/admin/memberships/${id}/approve`, { method: 'POST', body: JSON.stringify({ duration_months: duration }) }),
@@ -187,7 +196,15 @@ export const adminAPI = {
   approveBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/approve`, { method: 'POST' }),
   rejectBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/reject`, { method: 'POST' }),
   confirmPickup: (reservationId) => apiRequest(`/admin/borrowings/confirm-pickup/${reservationId}`, { method: 'POST' }),
-  returnBook: (borrowId) => apiRequest(`/admin/borrowings/${borrowId}/return`, { method: 'POST' }),
+  issueBook: (userId, bookId, dueDays = 14) => 
+    apiRequest('/admin/borrowings/issue', { method: 'POST', body: JSON.stringify({ user_id: userId, book_id: bookId, due_days: dueDays }) }),
+  returnBook: (borrowId, condition = 'good') => 
+    apiRequest(`/admin/borrowings/${borrowId}/return`, { method: 'POST', body: JSON.stringify({ condition }) }),
+  getBorrowHistory: (page = 1, search = '') => {
+    let url = `/admin/borrowings/history?page=${page}&per_page=20`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    return apiRequest(url);
+  },
   getNotifications: () => apiRequest('/admin/notifications'),
   markNotificationRead: (id) => apiRequest(`/admin/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () => apiRequest('/admin/notifications/read-all', { method: 'POST' }),

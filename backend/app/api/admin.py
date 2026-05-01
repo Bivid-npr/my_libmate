@@ -211,6 +211,152 @@ def update_book(book_id):
 # ============================================================
 # MEMBERSHIP MANAGEMENT (with notification integration)
 # ============================================================
+@admin_bp.route('/memberships/all', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_all_memberships():
+    """Get all memberships with optional status filter"""
+    admin_id = int(get_jwt_identity())
+    status = request.args.get('status')
+    
+    query = """
+        SELECT m.*, u.full_name, u.email, u.phone, u.address, u.profile_picture
+        FROM memberships m
+        JOIN users u ON m.user_id = u.user_id
+        WHERE 1=1
+    """
+    params = {}
+    
+    if status and status != 'all':
+        query += " AND m.status = :status"
+        params['status'] = status
+    
+    query += " ORDER BY m.requested_at DESC"
+    
+    result = db.session.execute(text(query), params)
+    memberships = [dict(row._mapping) for row in result]
+    
+    return jsonify(memberships), 200
+
+
+@admin_bp.route('/memberships/create', methods=['POST'])
+@jwt_required()
+@require_admin
+def admin_create_membership():
+    """Admin creates a membership for offline walk-in member"""
+    admin_id = int(get_jwt_identity())
+    
+    full_name = request.form.get('full_name', '').strip()
+    phone = request.form.get('phone', '').strip()
+    email = request.form.get('email', '').strip()
+    address = request.form.get('address', '').strip()
+    duration_months = int(request.form.get('duration_months', 12))
+    
+    if not full_name:
+        return jsonify({'error': 'Full name is required'}), 400
+    
+    # Check if user exists by phone or email
+    user_id = None
+    if phone:
+        existing = db.session.execute(
+            text("SELECT user_id FROM users WHERE phone = :p AND is_active = TRUE"),
+            {'p': phone}
+        ).first()
+        if existing:
+            user_id = existing[0]
+    
+    if not user_id and email:
+        existing = db.session.execute(
+            text("SELECT user_id FROM users WHERE email = :e AND is_active = TRUE"),
+            {'e': email}
+        ).first()
+        if existing:
+            user_id = existing[0]
+    
+    # Create new user if not found
+    if not user_id:
+        if not email:
+            email = f"offline_{int(datetime.now().timestamp())}@libmate.local"
+        
+        # Make sure email is unique
+        email_exists = db.session.execute(
+            text("SELECT user_id FROM users WHERE email = :e"), {'e': email}
+        ).first()
+        if email_exists:
+            email = f"offline_{int(datetime.now().timestamp())}_{phone or 'member'}@libmate.local"
+        
+        import bcrypt
+        hashed = bcrypt.hashpw('offline123'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        result = db.session.execute(
+            text("""
+                INSERT INTO users (full_name, email, phone, address, password_hash, role)
+                VALUES (:n, :e, :p, :a, :h, 'member')
+            """),
+            {'n': full_name, 'e': email, 'p': phone, 'a': address, 'h': hashed}
+        )
+        db.session.commit()
+        user_id = result.lastrowid
+    
+    # Verify user exists
+    if not user_id:
+        return jsonify({'error': 'Failed to create user account'}), 500
+    
+    # Check no active membership
+    existing = db.session.execute(
+        text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active'"),
+        {'uid': user_id}
+    ).first()
+    
+    if existing:
+        return jsonify({'error': 'User already has an active membership'}), 400
+    
+    # Handle photo
+    profile_photo = request.files.get('profile_photo')
+    photo_filename = None
+    if profile_photo and profile_photo.filename:
+        ext = profile_photo.filename.rsplit('.', 1)[1].lower() if '.' in profile_photo.filename else 'jpg'
+        upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'photos')
+        os.makedirs(upload_folder, exist_ok=True)
+        photo_filename = f"profile_{user_id}_{int(datetime.now().timestamp())}.{ext}"
+        profile_photo.save(os.path.join(upload_folder, photo_filename))
+        db.session.execute(
+            text("UPDATE users SET profile_picture = :pic WHERE user_id = :uid"),
+            {'pic': photo_filename, 'uid': user_id}
+        )
+        db.session.commit()
+    
+    # Handle receipt
+    payment_receipt = request.files.get('payment_receipt')
+    receipt_filename = None
+    if payment_receipt and payment_receipt.filename:
+        ext = payment_receipt.filename.rsplit('.', 1)[1].lower() if '.' in payment_receipt.filename else 'jpg'
+        upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', 'receipts')
+        os.makedirs(upload_folder, exist_ok=True)
+        receipt_filename = f"receipt_{user_id}_{int(datetime.now().timestamp())}.{ext}"
+        payment_receipt.save(os.path.join(upload_folder, receipt_filename))
+    
+    # Create membership
+    card_number = f"LIB-{datetime.now().strftime('%Y%m%d')}-{user_id:04d}"
+    
+    db.session.execute(
+        text("""
+            INSERT INTO memberships (user_id, duration_months, start_date, expiry_date, 
+                                     status, payment_status, card_number, card_issued_at, 
+                                     approved_at, processed_by, payment_receipt)
+            VALUES (:uid, :dur, CURDATE(), DATE_ADD(CURDATE(), INTERVAL :dur MONTH),
+                    'active', 'paid', :card, NOW(), NOW(), :aid, :receipt)
+        """),
+        {'uid': user_id, 'dur': duration_months, 'card': card_number, 'aid': admin_id, 'receipt': receipt_filename}
+    )
+    db.session.commit()
+    
+    return jsonify({
+        'message': f'Membership created for {full_name}',
+        'card_number': card_number,
+        'user_id': user_id,
+        'email': email
+    }), 201
 
 @admin_bp.route('/memberships/pending', methods=['GET'])
 @jwt_required()
@@ -341,24 +487,25 @@ def get_all_borrowings():
     per_page = request.args.get('per_page', 20, type=int)
     status = request.args.get('status')
     
+    # Always exclude returned/lost from active view
     query = """
         SELECT b.*, u.full_name as user_name, u.email, bk.title as book_title, bk.author
         FROM borrowings b
         JOIN users u ON b.user_id = u.user_id
         JOIN books bk ON b.book_id = bk.book_id
-        WHERE 1=1
+        WHERE b.status IN ('borrowed', 'overdue', 'renewed')
     """
     count_query = """
         SELECT COUNT(*) as total
         FROM borrowings b
         JOIN users u ON b.user_id = u.user_id
         JOIN books bk ON b.book_id = bk.book_id
-        WHERE 1=1
+        WHERE b.status IN ('borrowed', 'overdue', 'renewed')
     """
     params = {}
     count_params = {}
     
-    if status:
+    if status and status != 'all' and status in ('borrowed', 'overdue', 'renewed'):
         query += " AND b.status = :status"
         count_query += " AND b.status = :status"
         params['status'] = status
@@ -570,13 +717,85 @@ def confirm_pickup(reservation_id):
                 'message': error_msg
             }), 500
         
+@admin_bp.route('/borrowings/issue', methods=['POST'])
+@jwt_required()
+@require_admin
+def admin_issue_book():
+    """Admin manually issues a book to a member"""
+    admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    user_id = data.get('user_id')
+    book_id = data.get('book_id')
+    due_days = data.get('due_days', 14)
+    
+    if not user_id or not book_id:
+        return jsonify({'error': 'User ID and Book ID are required'}), 400
+    
+    # Check membership
+    has_membership = db.session.execute(
+        text("SELECT 1 FROM memberships WHERE user_id = :uid AND status = 'active' AND expiry_date > CURDATE()"),
+        {'uid': user_id}
+    ).first()
+    
+    if not has_membership:
+        return jsonify({'error': 'User does not have an active membership'}), 400
+    
+    # Check borrow limit
+    active = db.session.execute(
+        text("SELECT COUNT(*) FROM borrowings WHERE user_id = :uid AND status NOT IN ('returned', 'lost')"),
+        {'uid': user_id}
+    ).first()[0]
+    
+    if active >= 5:
+        return jsonify({'error': f'User already has {active}/5 books borrowed. They must return one first.'}), 400
+    
+    # Check duplicate
+    dup = db.session.execute(
+        text("SELECT 1 FROM borrowings WHERE user_id = :uid AND book_id = :bid AND status NOT IN ('returned', 'lost')"),
+        {'uid': user_id, 'bid': book_id}
+    ).first()
+    
+    if dup:
+        return jsonify({'error': 'User already has this book borrowed'}), 400
+    
+    # Check book availability
+    book = db.session.execute(
+        text("SELECT available_copies, title FROM books WHERE book_id = :bid AND is_archived = FALSE"),
+        {'bid': book_id}
+    ).first()
+    
+    if not book:
+        return jsonify({'error': 'Book not found'}), 404
+    
+    if book[0] < 1:
+        return jsonify({'error': 'No copies available'}), 400
+    
+    due_date = date.today() + timedelta(days=due_days)
+    
+    db.session.execute(
+        text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
+        {'uid': user_id, 'bid': book_id, 'aid': admin_id, 'due': due_date}
+    )
+    db.session.commit()
+    
+    return jsonify({
+        'message': f'Book "{book[1]}" issued successfully',
+        'due_date': due_date.isoformat()
+    }), 201
+        
 
 @admin_bp.route('/borrowings/<int:borrow_id>/return', methods=['POST'])
 @jwt_required()
 @require_admin
 def admin_return_book(borrow_id):
-    """Admin marks a book as returned"""
+    """Admin marks a book as returned with condition"""
     admin_id = int(get_jwt_identity())
+    data = request.get_json()
+    return_condition = data.get('condition', 'good')
+    
+    if return_condition not in ('good', 'damaged', 'lost'):
+        return jsonify({'error': 'Invalid condition'}), 400
     
     result = db.session.execute(
         text("SELECT * FROM borrowings WHERE borrow_id = :bid AND status NOT IN ('returned', 'lost')"),
@@ -586,18 +805,79 @@ def admin_return_book(borrow_id):
     if not result:
         return jsonify({'error': 'This book has already been returned or is no longer active.'}), 400
     
+    borrow = dict(result._mapping)
+    
     db.session.execute(
         text("UPDATE borrowings SET status = 'returned', returned_at = NOW(), updated_at = NOW() WHERE borrow_id = :bid"),
         {'bid': borrow_id}
     )
+    
+    # Update the borrow_history entry with condition and returned_to
+    db.session.execute(
+        text("""
+            UPDATE borrow_history SET return_condition = :cond, returned_to = :aid, fine_status = :fs
+            WHERE borrow_id = :bid
+        """),
+        {'cond': return_condition, 'aid': admin_id, 'bid': borrow_id,
+         'fs': 'unpaid' if borrow['due_date'] < date.today() else 'none'}
+    )
+    
     db.session.commit()
     
-    # Trigger recommendations update for the user
-    borrow = dict(result._mapping)
+    # Trigger AI recommendations
     from ..services.recommendation_service import RecommendationService
     RecommendationService.generate_recommendations_for_user(borrow['user_id'])
     
-    return jsonify({'message': 'Book returned successfully'}), 200
+    # Notify waitlist
+    next_res = db.session.execute(
+        text("""
+            SELECT r.user_id, b.title FROM reservations r
+            JOIN books b ON r.book_id = b.book_id
+            WHERE r.book_id = :bid AND r.status = 'pending' AND r.reservation_type = 'waitlist'
+            ORDER BY r.reserved_at ASC LIMIT 1
+        """),
+        {'bid': borrow['book_id']}
+    ).first()
+    
+    if next_res:
+        NotificationService.notify_user_book_available(next_res[0], next_res[1])
+    
+    return jsonify({'message': 'Book returned successfully', 'condition': return_condition}), 200
+
+
+@admin_bp.route('/borrowings/history', methods=['GET'])
+@jwt_required()
+@require_admin
+def get_borrow_history_admin():
+    """Get all borrow history with pagination and search"""
+    admin_id = int(get_jwt_identity())
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '')
+    
+    query = """SELECT * FROM vw_borrow_history WHERE 1=1"""
+    count_query = """SELECT COUNT(*) as total FROM vw_borrow_history WHERE 1=1"""
+    params = {}
+    
+    if search:
+        query += " AND (member_name LIKE :s OR member_email LIKE :s OR book_title LIKE :s)"
+        count_query += " AND (member_name LIKE :s OR member_email LIKE :s OR book_title LIKE :s)"
+        params['s'] = f'%{search}%'
+    
+    total = db.session.execute(text(count_query), params).first()[0]
+    
+    query += " ORDER BY returned_at DESC LIMIT :limit OFFSET :offset"
+    params['limit'] = per_page
+    params['offset'] = (page - 1) * per_page
+    
+    result = db.session.execute(text(query), params)
+    history = [dict(row._mapping) for row in result]
+    
+    return jsonify({
+        'history': history, 'total': total, 'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
+    }), 200
 
 
 # ============================================================
