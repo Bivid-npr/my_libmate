@@ -1,6 +1,6 @@
 // src/pages/admin/BorrowingsPage.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { FaUndo, FaCheck, FaTimes, FaClock, FaBookOpen, FaList, FaArrowLeft, FaSearch } from 'react-icons/fa';
+import { FaUndo, FaCheck, FaTimes, FaClock, FaBookOpen, FaList, FaArrowLeft, FaSearch, FaUndoAlt } from 'react-icons/fa';
 import { adminAPI, borrowingsAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
@@ -87,6 +87,17 @@ const BorrowingsPage = () => {
       if (viewingQueue) setSelectedBookQueue(prev => prev.filter(r => r.reservation_id !== reservationId));
       fetchAllData();
     } catch (error) { showToast(error.message || 'Failed to confirm pickup', 'error'); }
+  };
+
+  const handleReturnBook = async (borrowId, bookTitle, userName) => {
+    if (!window.confirm(`Mark "${bookTitle}" as returned by ${userName}?`)) return;
+    try {
+      await adminAPI.returnBook(borrowId);
+      showToast('Book returned successfully!', 'success');
+      fetchAllData();
+    } catch (error) {
+      showToast(error.message || 'Failed to return book', 'error');
+    }
   };
 
   const formatDate = (ds) => ds ? new Date(ds).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
@@ -267,12 +278,17 @@ const BorrowingsPage = () => {
                       <td className="py-3 px-4"><StatusBadge status={b.status} /></td>
                       <td className="py-3 px-4 text-sm text-[#4A3728] text-center">{b.renewal_count || 0} / 3</td>
                       <td className="py-3 px-4">
-                        {b.renewal_requested && b.renewal_status === 'pending' ? (
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleApproveRenewal(b.borrow_id)} className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600" title="Approve"><FaCheck size={12} /></button>
-                            <button onClick={() => handleRejectRenewal(b.borrow_id)} className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600" title="Reject"><FaTimes size={12} /></button>
-                          </div>
-                        ) : <span className="text-xs text-[#9A8478]">—</span>}
+                        {b.status !== 'returned' ? (
+                          <button 
+                            onClick={() => handleReturnBook(b.borrow_id, b.book_title, b.user_name)} 
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition"
+                          >
+                            <FaUndoAlt size={11} />
+                            Return
+                          </button>
+                        ) : (
+                          <span className="text-xs text-[#9A8478]">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

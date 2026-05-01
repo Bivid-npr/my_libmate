@@ -569,6 +569,35 @@ def confirm_pickup(reservation_id):
                 'error': 'Failed to issue book',
                 'message': error_msg
             }), 500
+        
+
+@admin_bp.route('/borrowings/<int:borrow_id>/return', methods=['POST'])
+@jwt_required()
+@require_admin
+def admin_return_book(borrow_id):
+    """Admin marks a book as returned"""
+    admin_id = int(get_jwt_identity())
+    
+    result = db.session.execute(
+        text("SELECT * FROM borrowings WHERE borrow_id = :bid AND status NOT IN ('returned', 'lost')"),
+        {'bid': borrow_id}
+    ).first()
+    
+    if not result:
+        return jsonify({'error': 'This book has already been returned or is no longer active.'}), 400
+    
+    db.session.execute(
+        text("UPDATE borrowings SET status = 'returned', returned_at = NOW(), updated_at = NOW() WHERE borrow_id = :bid"),
+        {'bid': borrow_id}
+    )
+    db.session.commit()
+    
+    # Trigger recommendations update for the user
+    borrow = dict(result._mapping)
+    from ..services.recommendation_service import RecommendationService
+    RecommendationService.generate_recommendations_for_user(borrow['user_id'])
+    
+    return jsonify({'message': 'Book returned successfully'}), 200
 
 
 # ============================================================

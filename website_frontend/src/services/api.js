@@ -187,6 +187,7 @@ export const adminAPI = {
   approveBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/approve`, { method: 'POST' }),
   rejectBookRequest: (id) => apiRequest(`/admin/book-requests/${id}/reject`, { method: 'POST' }),
   confirmPickup: (reservationId) => apiRequest(`/admin/borrowings/confirm-pickup/${reservationId}`, { method: 'POST' }),
+  returnBook: (borrowId) => apiRequest(`/admin/borrowings/${borrowId}/return`, { method: 'POST' }),
   getNotifications: () => apiRequest('/admin/notifications'),
   markNotificationRead: (id) => apiRequest(`/admin/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () => apiRequest('/admin/notifications/read-all', { method: 'POST' }),
