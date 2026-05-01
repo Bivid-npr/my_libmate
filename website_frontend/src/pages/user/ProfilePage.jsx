@@ -691,7 +691,7 @@ const ProfilePage = () => {
                 
                 <form onSubmit={handleMembershipSubmit}>
                   {/* Duration Selection */}
-                  <div className="mb-4">
+                                    <div className="mb-4">
                     <label className="block text-sm font-medium text-[#4A3728] mb-2">Select Duration</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button
@@ -721,7 +721,7 @@ const ProfilePage = () => {
                       <button
                         type="button"
                         onClick={() => setMembershipData({ ...membershipData, duration: '12' })}
-                        className={`p-3 rounded-lg border text-center transition ${
+                        className={`col-span-2 p-3 rounded-lg border text-center transition ${
                           membershipData.duration === '12'
                             ? 'border-[#C4895A] bg-[#C4895A]/10 text-[#C4895A]'
                             : 'border-[#EAE0D0] text-[#4A3728] hover:border-[#C4895A]'
