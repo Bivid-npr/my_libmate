@@ -4,6 +4,36 @@ import { FaUndo, FaCheck, FaTimes, FaClock, FaBookOpen, FaList, FaArrowLeft, FaS
 import { adminAPI, borrowingsAPI, booksAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
+// ── Helpers ──────────────────────────────────────────────────
+
+const parseDate = (d) => {
+  if (!d) return null;
+  // "2026-05-02 17:36:03"
+  let m = d.match(/(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (m) return new Date(m[1], m[2] - 1, m[3], m[4], m[5]);
+  // "Fri, 02 May 2026 17:36:03 GMT"
+  const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
+  const parts = d.split(' ');
+  if (parts.length >= 5 && months[parts[2]] !== undefined) {
+    const tm = parts[4].split(':');
+    return new Date(parts[3], months[parts[2]], parts[1], tm[0], tm[1]);
+  }
+  // Fallback
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? null : dt;
+};
+
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
+
+const fmtDateTime = (d) => {
+  const p = parseDate(d);
+  return p ? p.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A';
+};
+
+// ── Sub-components ───────────────────────────────────────────
+
+
+
 const TableHeader = ({ columns }) => (
   <thead className="bg-[#F3EDE3] border-b border-[#EAE0D0]">
     <tr>{columns.map((col, i) => <th key={i} className="text-left py-3 px-4 text-xs font-bold text-[#2C1F14] uppercase whitespace-nowrap">{col}</th>)}</tr>
@@ -254,8 +284,6 @@ const BorrowingsPage = () => {
   const handleApproveRenewal = async (id) => { try { await adminAPI.approveRenewal(id); showToast('Renewal approved', 'success'); fetchBorrowingsData(); } catch (e) { showToast(e.message, 'error'); } };
   const handleRejectRenewal = async (id) => { try { await adminAPI.rejectRenewal(id); showToast('Renewal rejected', 'success'); fetchBorrowingsData(); } catch (e) { showToast(e.message, 'error'); } };
 
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
-  const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A';
 
   const renewalRequests = useMemo(() => borrowings.filter(b => b.renewal_requested && b.renewal_status === 'pending'), [borrowings]);
 
@@ -350,15 +378,15 @@ const BorrowingsPage = () => {
             <div className="overflow-x-auto"><table className="w-full"><TableHeader columns={['Member', 'Book', 'Reserved', 'Expires', 'Time Left', '']} />
               <tbody className="divide-y divide-[#EAE0D0]">
                 {filteredPickups.map(r => {
-                  const ex = r.expires_at ? new Date(r.expires_at) : null;
-                  const tl = ex ? Math.max(0, Math.floor((ex - new Date()) / 3600000)) : null;
+                    const ex = parseDate(r.expires_at);
+                    const tl = ex ? Math.max(0, Math.floor((ex.getTime() - Date.now()) / 3600000)) : null;
                   return (
                     <tr key={r.reservation_id} className="hover:bg-[#FAF7F2] transition">
                       <td className="py-3 px-4"><div className="font-medium text-[#2C1F14]">{r.full_name || `User #${r.user_id}`}</div><div className="text-xs text-[#9A8478]">{r.email}</div></td>
                       <td className="py-3 px-4 text-[#2C1F14]">{r.title}</td>
                       <td className="py-3 px-4 text-sm text-[#4A3728]">{fmtDateTime(r.reserved_at)}</td>
-                      <td className="py-3 px-4 text-sm text-[#4A3728]">{ex ? fmtDateTime(r.expires_at) : '—'}</td>
-                      <td className="py-3 px-4">{tl !== null ? <span className={`text-xs px-2 py-1 rounded-full ${tl < 6 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{tl > 0 ? `${tl}h left` : 'Expired'}</span> : null}</td>
+                      <td className="py-3 px-4 text-sm text-[#4A3728]">{ex && !isNaN(ex.getTime()) ? fmtDateTime(r.expires_at) : '—'}</td>
+                      <td className="py-3 px-4">{tl !== null ? <span className={`text-xs px-2 py-1 rounded-full ${tl < 6 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{tl > 0 ? `${tl}h left` : 'Expired'}</span> : <span className="text-xs text-[#9A8478]">—</span>}</td>
                       <td className="py-3 px-4"><button onClick={() => handleConfirmPickup(r.reservation_id)} className="px-3 py-1.5 bg-[#C4895A] text-white text-xs rounded-lg hover:bg-[#D4A574] transition">Confirm</button></td>
                     </tr>
                   );
