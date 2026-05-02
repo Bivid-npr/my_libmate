@@ -678,6 +678,12 @@ def confirm_pickup(reservation_id):
             text("INSERT INTO borrowings (user_id, book_id, issued_by, due_date, status) VALUES (:uid, :bid, :aid, :due, 'borrowed')"),
             {'uid': res['user_id'], 'bid': res['book_id'], 'aid': admin_id, 'due': due_date}
         )
+
+        # Mark reservation as fulfilled
+        db.session.execute(
+            text("UPDATE reservations SET status = 'fulfilled' WHERE reservation_id = :rid"),
+            {'rid': reservation_id}
+        )
         db.session.commit()
         
         return jsonify({

@@ -37,7 +37,7 @@ import UserDetailPage from './pages/admin/UserDetailPage';
 import AdminBorrowingsPage from './pages/admin/BorrowingsPage';
 import BookRequestsPage from './pages/admin/BookRequestsPage';
 import AdminAnnouncementsPage from './pages/admin/AnnouncementsPage';
-import AdminSmokeAlertsPage from './pages/admin/SmokeAtertPage';
+import AdminSmokeAlertsPage from './pages/admin/SmokeAlertPage';
 import AdminNotificationsPage from './pages/admin/NotificationsPage';
 import AdminProfilePage from './pages/admin/AdminProfilePage';
 
