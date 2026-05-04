@@ -33,6 +33,60 @@ class RecommendationService:
         df['content'] = (df['title'].fillna('') + ' ' + df['author'].fillna('') + ' ' + df['genre'].fillna('')).str.lower()
         return df
     
+    @staticmethod
+    def _get_user_rating_signals(user_id):
+        """Get genre preferences based on user's review ratings"""
+        boosted_genres = {}
+        penalized_genres = {}
+        
+        ratings = db.session.execute(
+            text("""
+                SELECT r.book_id, r.rating, b.genre 
+                FROM reviews r 
+                JOIN books b ON r.book_id = b.book_id 
+                WHERE r.user_id = :uid
+            """),
+            {'uid': user_id}
+        ).fetchall()
+        
+        for _, rating, genre in ratings:
+            if not genre:
+                continue
+            if rating >= 4:
+                boosted_genres[genre] = boosted_genres.get(genre, 0) + 1
+            elif rating <= 2:
+                penalized_genres[genre] = penalized_genres.get(genre, 0) + 1
+        
+        # Also check recently borrowed (within 14 days) for negative signals
+        # User returned early = didn't like it
+        early_returns = db.session.execute(
+            text("""
+                SELECT b.genre FROM borrow_history bh
+                JOIN books b ON bh.book_id = b.book_id
+                WHERE bh.user_id = :uid 
+                AND bh.days_borrowed < 3 
+                AND bh.returned_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+            """),
+            {'uid': user_id}
+        ).fetchall()
+        
+        for (genre,) in early_returns:
+            if genre:
+                penalized_genres[genre] = penalized_genres.get(genre, 0) + 0.5
+        
+        return boosted_genres, penalized_genres
+    
+    @staticmethod
+    def _get_book_genre_map(book_ids):
+        """Get genre for a list of book IDs"""
+        if not book_ids:
+            return {}
+        ids_str = ','.join(map(str, book_ids))
+        result = db.session.execute(
+            text(f"SELECT book_id, genre FROM books WHERE book_id IN ({ids_str})")
+        ).fetchall()
+        return {row[0]: row[1] for row in result}
+    
     # ================================================================
     # PERSONALIZED RECOMMENDATIONS (Per User)
     # ================================================================
@@ -43,6 +97,7 @@ class RecommendationService:
         AI-powered personal recommendations using:
         - Collaborative Filtering (users like you also borrowed...)
         - Content-Based Filtering (similar to books you've read)
+        - Rating-Based Genre Boosting (prefer genres of highly-rated books)
         - Cold Start (popular diverse picks for new users)
         """
         try:
@@ -59,6 +114,9 @@ class RecommendationService:
             wishlist_ids = [r[0] for r in wishlist]
             
             exclude = set(borrowed_ids + wishlist_ids)
+            
+            # ===== Rating-Based Genre Signals =====
+            boosted_genres, penalized_genres = RecommendationService._get_user_rating_signals(user_id)
             
             if not borrowed_ids:
                 RecommendationService._cold_start(user_id, exclude, top_n)
@@ -100,7 +158,21 @@ class RecommendationService:
                 try:
                     tfidf_matrix = tfidf.fit_transform(books_df['content'])
                     
-                    for bid in borrowed_ids[:5]:
+                    # Prioritize highly-rated books for content similarity
+                    rated_borrowed = db.session.execute(
+                        text("""
+                            SELECT bh.book_id FROM borrow_history bh
+                            JOIN reviews r ON bh.book_id = r.book_id AND bh.user_id = r.user_id
+                            WHERE bh.user_id = :uid AND r.rating >= 4
+                            ORDER BY r.rating DESC LIMIT 5
+                        """),
+                        {'uid': user_id}
+                    ).fetchall()
+                    
+                    # Use rated books first, then fall back to all borrowed
+                    content_seeds = [r[0] for r in rated_borrowed] if rated_borrowed else borrowed_ids[:5]
+                    
+                    for bid in content_seeds:
                         matches = books_df[books_df['book_id'] == bid]
                         if matches.empty: continue
                         idx = matches.index[0]
@@ -114,13 +186,25 @@ class RecommendationService:
                 except:
                     pass
             
-            # ===== Combine Scores =====
+            # ===== Combine Scores with Genre Boosting =====
             all_ids = set(list(cf_scores.keys()) + list(cb_scores.keys()))
+            book_genres = RecommendationService._get_book_genre_map(all_ids)
+            
             final = {}
             for bid in all_ids:
                 cf = cf_scores.get(bid, 0)
                 cb = cb_scores.get(bid, 0)
-                final[bid] = cf * 0.5 + cb * 0.5 if len(borrowed_ids) >= 3 else cf * 0.3 + cb * 0.7
+                base = cf * 0.5 + cb * 0.5 if len(borrowed_ids) >= 3 else cf * 0.3 + cb * 0.7
+                
+                # Apply genre boost/penalty from user's rating history
+                bid_genre = book_genres.get(bid, '')
+                genre_mult = 1.0
+                if bid_genre in boosted_genres:
+                    genre_mult = min(1.5, 1.0 + (0.1 * boosted_genres[bid_genre]))
+                if bid_genre in penalized_genres:
+                    genre_mult = max(0.3, 1.0 - (0.2 * penalized_genres[bid_genre]))
+                
+                final[bid] = base * genre_mult
             
             sorted_recs = sorted(final.items(), key=lambda x: x[1], reverse=True)[:top_n]
             
@@ -130,13 +214,17 @@ class RecommendationService:
                 exclude_str = ','.join(map(str, exclude)) if exclude else '0'
                 popular = db.session.execute(
                     text(f"""
-                        SELECT book_id, total_borrow_count FROM books
-                        WHERE is_archived=FALSE AND book_id NOT IN ({exclude_str})
-                        ORDER BY total_borrow_count DESC LIMIT :n
+                        SELECT b.book_id, b.total_borrow_count, COALESCE(AVG(r.rating), 3.5) as avg_r
+                        FROM books b
+                        LEFT JOIN reviews r ON b.book_id = r.book_id
+                        WHERE b.is_archived=FALSE AND b.book_id NOT IN ({exclude_str})
+                        GROUP BY b.book_id
+                        ORDER BY (b.total_borrow_count * 0.6 + COALESCE(AVG(r.rating), 3.5) * 10 * 0.4) DESC 
+                        LIMIT :n
                     """),
                     {'n': top_n - len(sorted_recs)}
                 ).fetchall()
-                for bid, _ in popular:
+                for bid, _, _ in popular:
                     if bid not in existing:
                         sorted_recs.append((bid, 0.5))
             
@@ -197,13 +285,15 @@ class RecommendationService:
     @staticmethod
     def update_trending_books():
         """
-        Professional trending algorithm using multiple weighted signals:
-        - Currently borrowed (5x)
-        - Recently returned (4x / 2.5x / 1.5x by recency)
-        - Renewals (2x per renewal)
-        - Wishlist adds (2x)
-        - Reservation queue (1.5x per person)
-        - Recent reviews (1x)
+        Multi-signal trending algorithm:
+        - Currently borrowed (5x) — strongest demand signal
+        - Recently returned 0-7 days (4x) — hot right now
+        - Recently returned 8-14 days (2.5x) — still warm
+        - Recently returned 15-30 days (1.5x) — cooling down
+        - Renewals (2x per renewal) — sustained interest
+        - Wishlist adds (2x) — future demand
+        - Reservations (1.5x) — pending demand
+        - Recent reviews (2.5x) — engagement + quality signal
         - Fills to 100 with highly-rated popular books
         """
         try:
@@ -234,7 +324,7 @@ class RecommendationService:
                             UNION ALL
                             SELECT r.book_id, 1.5 FROM reservations r WHERE r.status = 'pending'
                             UNION ALL
-                            SELECT rv.book_id, 1.0 FROM reviews rv WHERE rv.created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+                            SELECT rv.book_id, 2.5 FROM reviews rv WHERE rv.created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
                         ) signals ON b.book_id = signals.book_id
                         WHERE b.is_archived = FALSE
                         GROUP BY b.book_id

@@ -249,18 +249,6 @@ def add_review(book_id):
     if not book:
         return jsonify({'error': 'Book not found'}), 404
     
-    has_borrowed = db.session.execute(
-        text("""
-            SELECT 1 FROM borrow_history 
-            WHERE user_id = :user_id AND book_id = :book_id 
-            LIMIT 1
-        """),
-        {'user_id': user_id, 'book_id': book_id}
-    ).first()
-    
-    if not has_borrowed:
-        return jsonify({'error': 'You can only review books you have borrowed'}), 403
-    
     existing = db.session.execute(
         text("SELECT review_id FROM reviews WHERE user_id = :user_id AND book_id = :book_id"),
         {'user_id': user_id, 'book_id': book_id}
