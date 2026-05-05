@@ -18,7 +18,7 @@ const UserDetailPage = () => {
   const fetchUserDetails = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/users/${userId}`, {
+      const response = await fetch(`/api/admin/users/${userId}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token')}` }
       });
       const data = await response.json();
@@ -73,7 +73,7 @@ const UserDetailPage = () => {
         <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-6">
           <div className="flex items-center gap-4 mb-6">
             {user.profile_picture ? (
-              <img src={`http://localhost:5000/uploads/photos/${user.profile_picture}`} alt="" className="w-16 h-16 rounded-full object-cover" />
+              <img src={`/uploads/photos/${user.profile_picture}`} alt="" className="w-16 h-16 rounded-full object-cover" />
             ) : (
               <div className="w-16 h-16 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded-full flex items-center justify-center">
                 <span className="text-white text-xl font-bold">{user.full_name?.charAt(0) || 'U'}</span>

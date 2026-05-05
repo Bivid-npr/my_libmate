@@ -39,7 +39,7 @@ const WishlistCard = ({ book, onRemove }) => {
             {/* ADD COVER IMAGE */}
             {book.cover_image && (
               <img 
-                src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                src={`/uploads/covers/${book.cover_image}`}
                 alt={book.title}
                 className="absolute inset-0 w-full h-full object-cover"
                 loading="lazy"

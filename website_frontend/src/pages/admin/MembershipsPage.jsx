@@ -55,7 +55,7 @@ const MembershipsPage = () => {
       if (createData.paymentReceipt) formData.append('payment_receipt', createData.paymentReceipt);
 
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/admin/memberships/create', {
+      const response = await fetch('/api/admin/memberships/create', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData

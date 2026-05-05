@@ -272,7 +272,7 @@ const UsersPage = () => {
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           {admin.profile_picture ? (
-                            <img src={`http://localhost:5000/uploads/photos/${admin.profile_picture}`} alt="" className="w-9 h-9 rounded-full object-cover" />
+                            <img src={`/uploads/photos/${admin.profile_picture}`} alt="" className="w-9 h-9 rounded-full object-cover" />
                           ) : (
                             <div className="w-9 h-9 bg-[#C4895A] rounded-full flex items-center justify-center">
                               <FaUserShield className="text-white text-sm" />

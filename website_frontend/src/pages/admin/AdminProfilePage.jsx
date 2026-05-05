@@ -85,7 +85,7 @@ const AdminProfilePage = () => {
       formData.append('profile_photo', file);
       
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/admin/profile/upload-photo', {
+      const response = await fetch('/api/admin/profile/upload-photo', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -117,7 +117,7 @@ const AdminProfilePage = () => {
       await adminAPI.updateAdminProfile({ profile_picture: null });
       // Call remove endpoint
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      await fetch('http://localhost:5000/api/admin/profile/remove-photo', {
+      await fetch('/api/admin/profile/remove-photo', {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -191,7 +191,7 @@ const AdminProfilePage = () => {
 
   const getProfilePhotoUrl = () => {
     if (profile?.profile_picture) {
-      return `http://localhost:5000/uploads/photos/${profile.profile_picture}?t=${photoTimestamp}`;
+      return `/uploads/photos/${profile.profile_picture}?t=${photoTimestamp}`;
     }
     return null;
   };

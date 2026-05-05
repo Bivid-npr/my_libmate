@@ -27,7 +27,7 @@ const SmokeAlertsPage = () => {
     fetchAlerts();
 
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const socket = io('http://localhost:5000', { query: { token } });
+    const socket = io({ query: { token } });
 
     socket.on('new_notification', (data) => {
       if (data.type === 'smoke_alert') {

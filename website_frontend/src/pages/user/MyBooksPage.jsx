@@ -183,7 +183,7 @@ const MyBooksPage = () => {
                           <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2 overflow-hidden relative">
                             {book.cover_image && (
                               <img 
-                                src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                                src={`/uploads/covers/${book.cover_image}`}
                                 alt={book.book_title || book.title}
                                 className="absolute inset-0 w-full h-full object-cover"
                                 onError={(e) => { e.target.style.display = 'none'; }}
@@ -345,7 +345,7 @@ const MyBooksPage = () => {
                       <div className="w-full sm:w-[80px] h-[120px] rounded-lg bg-gradient-to-br from-[#2C1F14] to-[#4A3728] flex items-end p-2 overflow-hidden relative">
                         {book.cover_image && (
                           <img 
-                            src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                            src={`/uploads/covers/${book.cover_image}`}
                             alt={book.title}
                             className="absolute inset-0 w-full h-full object-cover"
                             onError={(e) => { e.target.style.display = 'none'; }}
@@ -406,7 +406,7 @@ const MyBooksPage = () => {
                       <div className="book-cover w-full h-[230px] rounded-[12px] flex items-end p-3 relative overflow-hidden shadow-md transition-transform duration-250 hover:-translate-y-1.5 hover:shadow-xl bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
                           {book.cover_image && (
                             <img 
-                              src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                              src={`/uploads/covers/${book.cover_image}`}
                               alt={book.title}
                               className="absolute inset-0 w-full h-full object-cover"
                               loading="lazy"

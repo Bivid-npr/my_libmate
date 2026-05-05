@@ -18,9 +18,7 @@ const NotificationsPage = () => {
       
       // Connect to WebSocket with token for user identification
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const socket = io('http://localhost:5000', {
-        query: { token }
-      });
+      const socket = io({query: { token }});
       
       socket.on('user_notification', (data) => {
         setNotifications(prev => [data, ...prev]);

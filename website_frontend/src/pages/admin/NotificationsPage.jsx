@@ -41,7 +41,7 @@ const NotificationsPage = () => {
     fetchNotifications();
 
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const socket = io('http://localhost:5000', {
+    const socket = io({
       query: { token }
     });
 

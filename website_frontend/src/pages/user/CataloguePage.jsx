@@ -42,7 +42,7 @@ const BookGridCard = ({ book }) => {
         {/* ADD COVER IMAGE */}
         {book.cover_image && (
           <img 
-            src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+            src={`/uploads/covers/${book.cover_image}`}
             alt={book.title}
             className="absolute inset-0 w-full h-full object-cover"
             loading="lazy"
@@ -90,7 +90,7 @@ const BookListCard = ({ book }) => (
       {/* ADD COVER IMAGE */}
       {book.cover_image && (
         <img 
-          src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+          src={`/uploads/covers/${book.cover_image}`}
           alt={book.title}
           className="absolute inset-0 w-full h-full object-cover rounded-lg"
           loading="lazy"

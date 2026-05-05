@@ -11,10 +11,6 @@ import logoNav from '../../assets/logo_navx360.svg';
 const getImageUrl = (path) => {
   if (!path) return null;
   if (path.startsWith('http')) return path;
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-  if (apiBase.startsWith('http')) {
-    return `http://localhost:5000/uploads/covers/${path}`;
-  }
   return `/uploads/covers/${path}`;
 };
 

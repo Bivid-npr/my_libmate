@@ -174,7 +174,7 @@ const BookDetailPage = () => {
   }, [bookId, userReview, showToast]);
 
   const getProfilePhotoUrl = useCallback((photo) => {
-    if (photo) return `http://localhost:5000/uploads/photos/${photo}`;
+    if (photo) return `/uploads/photos/${photo}`;
     return null;
   }, []);
 
@@ -260,7 +260,7 @@ const BookDetailPage = () => {
           <div className="lg:w-[280px] flex-shrink-0">
             <div className="rounded-2xl aspect-[2/3] w-full flex flex-col justify-end p-5 shadow-xl relative overflow-hidden mb-4 bg-gradient-to-br from-[#2C1F14] to-[#4A3728]">
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"></div>
-              {book.cover_image && <img src={`http://localhost:5000/uploads/covers/${book.cover_image}`} alt={book.title} className="absolute inset-0 w-full h-full object-cover" onError={(e) => e.target.style.display = 'none'} />}
+              {book.cover_image && <img src={`/uploads/covers/${book.cover_image}`} alt={book.title} className="absolute inset-0 w-full h-full object-cover" onError={(e) => e.target.style.display = 'none'} />}
               <button onClick={handleShare} className="absolute top-3 right-3 w-8 h-8 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-white/30 transition" aria-label="Share book"><FaShare size={12} /></button>
               <div className="relative z-10"><h1 className="font-serif text-base font-bold text-white mb-0.5 line-clamp-2">{book.title}</h1><p className="text-white/80 text-[10px]">by {book.author}</p></div>
             </div>

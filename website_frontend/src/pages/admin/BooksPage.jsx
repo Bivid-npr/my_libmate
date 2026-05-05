@@ -113,7 +113,7 @@ const BooksPage = () => {
       Object.keys(newBook).forEach(key => formData.append(key, newBook[key]));
       if (coverFile) formData.append('cover_image', coverFile);
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/admin/books', {
+      const response = await fetch('/api/admin/books', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -138,7 +138,7 @@ const BooksPage = () => {
       });
       if (editCoverFile) formData.append('cover_image', editCoverFile);
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/admin/books/${editingBook.book_id}`, {
+      const response = await fetch(`/api/admin/books/${editingBook.book_id}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -156,7 +156,7 @@ const BooksPage = () => {
 
   const openEditModal = (book) => {
     setEditingBook({ ...book });
-    setEditCoverPreview(book.cover_image ? `http://localhost:5000/uploads/covers/${book.cover_image}` : null);
+    setEditCoverPreview(book.cover_image ? `/uploads/covers/${book.cover_image}` : null);
     setEditCoverFile(null);
     setShowEditModal(true);
   };
@@ -306,7 +306,7 @@ const BooksPage = () => {
                   <tr key={book.book_id} className="hover:bg-[#FAF7F2] transition">
                     <td className="py-3 px-4">
                       {book.cover_image ? (
-                        <img src={`http://localhost:5000/uploads/covers/${book.cover_image}`} alt="" className="w-10 h-14 object-cover rounded" onError={(e) => { e.target.style.display = 'none'; }} />
+                        <img src={`/uploads/covers/${book.cover_image}`} alt="" className="w-10 h-14 object-cover rounded" onError={(e) => { e.target.style.display = 'none'; }} />
                       ) : (
                         <div className="w-10 h-14 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded flex items-center justify-center">
                           <FaBook className="text-white/50 text-xs" />
