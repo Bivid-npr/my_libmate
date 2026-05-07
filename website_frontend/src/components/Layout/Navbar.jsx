@@ -56,7 +56,7 @@ const Navbar = () => {
 
   const getProfilePhotoUrl = () => {
     if (user?.profile_picture) {
-      return `http://localhost:5000/uploads/photos/${user.profile_picture}?t=${photoTimestamp}`;
+      return `/uploads/photos/${user.profile_picture}?t=${photoTimestamp}`;
     }
     return null;
   };

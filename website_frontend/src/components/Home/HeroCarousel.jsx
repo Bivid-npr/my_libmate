@@ -201,7 +201,7 @@ const HeroCarousel = () => {
                 <div className="hidden md:block w-64 h-96 bg-gradient-to-br from-[#C4895A]/20 to-[#D4A574]/10 rounded-xl shadow-2xl flex items-center justify-center border border-white/10 overflow-hidden relative">
                   {book.cover_image ? (
                     <img 
-                      src={`http://localhost:5000/uploads/covers/${book.cover_image}`}
+                      src={`/uploads/covers/${book.cover_image}`}
                       alt={book.title}
                       className="absolute inset-0 w-full h-full object-cover rounded-xl"
                       onError={(e) => { e.target.style.display = 'none'; }}
