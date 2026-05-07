@@ -12,6 +12,7 @@ import { useToast } from '../../context/ToastContext';
 import { adminAPI } from '../../services/api';
 import LoadingScreen from './LoadingScreen';
 import logoNav from '../../assets/logo_navx360.svg';
+import logoIcon from '../../assets/logo_icon.svg';
 
 const AdminLayoutContent = () => {
   const location = useLocation();
@@ -82,11 +83,15 @@ const AdminLayoutContent = () => {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
-      <aside className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 bg-[#2C1F14] shadow-xl ${sidebarWidth}`}>
+      {/* Navbar  */}
+      <aside className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 bg-[#EFE8DC] shadow-xl ${sidebarWidth}`}>
         <div className="flex items-center justify-between p-4 border-b border-[#4A3728]">
           <div className={`flex items-center gap-2 ${sidebarCollapsed && 'justify-center w-full'}`}>
-            <img src={logoNav} alt="LibMate" className="h-8 w-auto" />
-            {!sidebarCollapsed && <span className="text-white font-serif text-lg font-bold">Admin</span>}
+            <img 
+              src={sidebarCollapsed ? logoIcon : logoNav} 
+              alt="LibMate" 
+              className={sidebarCollapsed ? "h-12 w-auto" : "h-12 w-auto"} 
+            />
           </div>
           <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="text-[#9A8478] hover:text-white transition">
             {sidebarCollapsed ? <FaChevronRight size={16} /> : <FaChevronLeft size={16} />}
@@ -112,7 +117,7 @@ const AdminLayoutContent = () => {
           <Link
             to="/admin/profile"
             className={`flex items-center gap-3 mb-3 p-2 rounded-lg transition ${
-              isProfileActive ? 'bg-[#C4895A]' : 'hover:bg-[#4A3728]'
+              isProfileActive ? 'bg-[#C4895A]' : 'bg-[#D4C5B0] hover:bg-[#4A3728]'
             } ${sidebarCollapsed && 'justify-center'}`}
           >
             {user?.profile_picture ? (

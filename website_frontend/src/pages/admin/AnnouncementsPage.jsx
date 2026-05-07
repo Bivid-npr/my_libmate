@@ -80,8 +80,7 @@ const AnnouncementsPage = () => {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Announcements</h1>
-          <p className="text-[#9A8478] mt-1">Send announcements to all library members</p>
+          <p className="text-[#9A8478] mt-1 font-medium">Send announcements to all library members</p>
         </div>
         <button
           onClick={() => setShowForm(true)}

@@ -318,17 +318,15 @@ const BorrowingsPage = () => {
   return (
     <div>
       <div className="flex justify-between items-center mb-8">
-        <div><h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Manage Borrowings</h1><p className="text-[#9A8478] mt-1">Track borrowings, pickups, waitlist, renewals & history</p></div>
+        <div className="flex gap-1 border-b border-[#EAE0D0] overflow-x-auto">
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setViewingQueue(false); setPage(1); }}
+              className={`px-6 py-3 text-sm font-medium transition-all duration-200 whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'}`}>
+              <tab.icon size={14} />{tab.label} ({tab.count})
+            </button>
+          ))}
+        </div>
         <button onClick={() => setShowIssueModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium"><FaPlus size={14} />Issue Book</button>
-      </div>
-
-      <div className="flex gap-1 border-b border-[#EAE0D0] mb-6 overflow-x-auto">
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => { setActiveTab(tab.id); setViewingQueue(false); setPage(1); }}
-            className={`px-6 py-3 text-sm font-medium transition-all duration-200 whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'}`}>
-            <tab.icon size={14} />{tab.label} ({tab.count})
-          </button>
-        ))}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">

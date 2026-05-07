@@ -127,11 +127,6 @@ const UsersPage = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Manage Users</h1>
-        <p className="text-[#9A8478] mt-1">View and manage library members and administrators</p>
-      </div>
-
       {/* Tabs */}
       <div className="flex gap-1 border-b border-[#EAE0D0] mb-6">
         <button

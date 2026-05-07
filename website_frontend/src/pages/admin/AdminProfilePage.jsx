@@ -213,11 +213,6 @@ const AdminProfilePage = () => {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Admin Profile</h1>
-        <p className="text-[#9A8478] mt-1">Manage your admin account settings</p>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left - Profile Card */}
         <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-6">

@@ -194,7 +194,6 @@ const NotificationsPage = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Notifications</h1>
           <p className="text-[#9A8478] mt-1">
             {unreadCount > 0 
               ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}` 

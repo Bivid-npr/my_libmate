@@ -113,11 +113,6 @@ const AdminDashboardPage = () => {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Admin Dashboard</h1>
-        <p className="text-[#9A8478] mt-1">System overview and management</p>
-      </div>
-
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
         {statCards.map((stat, idx) => (

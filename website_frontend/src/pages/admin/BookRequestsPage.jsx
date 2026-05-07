@@ -88,11 +88,6 @@ const BookRequestsPage = () => {
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Book Purchase Requests</h1>
-        <p className="text-[#9A8478] mt-1">Review and manage user-submitted book purchase requests</p>
-      </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">

@@ -65,8 +65,7 @@ const SmokeAlertsPage = () => {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Smoke Alerts</h1>
-          <p className="text-[#9A8478] mt-1">
+          <p className="text-[#9A8478] mt-1 font-medium">
             IoT smoke detection monitoring
             {activeAlerts > 0 && (
               <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">

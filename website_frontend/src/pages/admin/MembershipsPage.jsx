@@ -80,16 +80,6 @@ const MembershipsPage = () => {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="font-serif text-3xl font-bold text-[#2C1F14]">Manage Memberships</h1>
-          <p className="text-[#9A8478] mt-1">Review applications and manage memberships</p>
-        </div>
-        <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium">
-          <FaPlus size={14} />New Membership
-        </button>
-      </div>
-
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">
         <div className="flex flex-col sm:flex-row gap-4">
@@ -104,6 +94,9 @@ const MembershipsPage = () => {
             <input type="text" placeholder="Search by name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A]" />
           </div>
+          <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium">
+            <FaPlus size={14} />New Membership
+          </button>          
         </div>
       </div>
 
