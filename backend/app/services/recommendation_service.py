@@ -297,17 +297,15 @@ class RecommendationService:
         - Fills to 100 with highly-rated popular books
         """
         try:
-            db.session.execute(text("DELETE FROM trending_books"))
-            
             db.session.execute(
                 text("""
                     INSERT INTO trending_books (book_id, period_start, period_end, borrow_count, trend_rank)
                     SELECT book_id, DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()),
-                           total_activity, ROW_NUMBER() OVER (ORDER BY trend_score DESC)
+                        total_activity, ROW_NUMBER() OVER (ORDER BY trend_score DESC)
                     FROM (
                         SELECT b.book_id,
-                               COALESCE(SUM(score), 0) as trend_score,
-                               COUNT(*) as total_activity
+                            COALESCE(SUM(score), 0) as trend_score,
+                            COUNT(*) as total_activity
                         FROM books b
                         LEFT JOIN (
                             SELECT book_id, 5.0 as score FROM borrowings WHERE status NOT IN ('returned', 'lost')
@@ -332,30 +330,41 @@ class RecommendationService:
                         ORDER BY trend_score DESC
                         LIMIT 100
                     ) ranked
+                    ON DUPLICATE KEY UPDATE
+                        borrow_count = VALUES(borrow_count),
+                        trend_rank = VALUES(trend_rank),
+                        generated_at = NOW()
                 """)
             )
             
-            # Fill remaining slots with popular high-rated books
-            count = db.session.execute(text("SELECT COUNT(*) FROM trending_books")).first()[0]
+            # Fill remaining slots (with ON DUPLICATE KEY UPDATE)
+            count = db.session.execute(text(
+                "SELECT COUNT(*) FROM trending_books WHERE period_start = DATE_FORMAT(CURDATE(), '%Y-%m-01')"
+            )).first()[0]
             
             if count < 100:
                 db.session.execute(
                     text(f"""
                         INSERT INTO trending_books (book_id, period_start, period_end, borrow_count, trend_rank)
                         SELECT b.book_id, DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 0,
-                               {count} + ROW_NUMBER() OVER (ORDER BY (b.total_borrow_count * 0.6 + COALESCE(AVG(r.rating), 3.5) * 10 * 0.4) DESC)
+                            {count} + ROW_NUMBER() OVER (ORDER BY (b.total_borrow_count * 0.6 + COALESCE(AVG(r.rating), 3.5) * 10 * 0.4) DESC)
                         FROM books b
                         LEFT JOIN reviews r ON b.book_id = r.book_id
                         WHERE b.is_archived = FALSE AND b.available_copies > 0
-                          AND b.book_id NOT IN (SELECT book_id FROM trending_books)
                         GROUP BY b.book_id
                         ORDER BY (b.total_borrow_count * 0.6 + COALESCE(AVG(r.rating), 3.5) * 10 * 0.4) DESC
                         LIMIT {100 - count}
+                        ON DUPLICATE KEY UPDATE
+                            borrow_count = VALUES(borrow_count),
+                            trend_rank = VALUES(trend_rank),
+                            generated_at = NOW()
                     """)
                 )
             
             db.session.commit()
-            final = db.session.execute(text("SELECT COUNT(*) FROM trending_books")).first()[0]
+            final = db.session.execute(text(
+                "SELECT COUNT(*) FROM trending_books WHERE period_start = DATE_FORMAT(CURDATE(), '%Y-%m-01')"
+            )).first()[0]
             logger.info(f"Trending updated: {final} books (multi-signal scoring)")
             
         except Exception as e:

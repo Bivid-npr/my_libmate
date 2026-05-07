@@ -127,10 +127,12 @@ def create_app(config_class=Config):
             _trending_seeded = True
             try:
                 from .services.recommendation_service import RecommendationService
-                count = db.session.execute(text("SELECT COUNT(*) FROM trending_books")).first()[0]
-                if count == 0:
+                current = db.session.execute(
+                    text("SELECT COUNT(*) FROM trending_books WHERE period_start = DATE_FORMAT(CURDATE(), '%Y-%m-01')")
+                ).first()[0]
+                if current == 0:
                     RecommendationService.update_trending_books()
-                    print("[OK] Initial trending data generated")
+                    print("[OK] Trending data generated for current month")
             except Exception as e:
                 print(f"[INFO] Trending seed skipped: {e}")
 
