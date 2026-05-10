@@ -8,17 +8,14 @@ import { useToast } from '../../context/ToastContext';
 
 const parseDate = (d) => {
   if (!d) return null;
-  // "2026-05-02 17:36:03"
   let m = d.match(/(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
   if (m) return new Date(m[1], m[2] - 1, m[3], m[4], m[5]);
-  // "Fri, 02 May 2026 17:36:03 GMT"
   const months = { Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11 };
   const parts = d.split(' ');
   if (parts.length >= 5 && months[parts[2]] !== undefined) {
     const tm = parts[4].split(':');
     return new Date(parts[3], months[parts[2]], parts[1], tm[0], tm[1]);
   }
-  // Fallback
   const dt = new Date(d);
   return isNaN(dt.getTime()) ? null : dt;
 };
@@ -31,8 +28,6 @@ const fmtDateTime = (d) => {
 };
 
 // ── Sub-components ───────────────────────────────────────────
-
-
 
 const TableHeader = ({ columns }) => (
   <thead className="bg-[#F3EDE3] border-b border-[#EAE0D0]">
@@ -86,24 +81,16 @@ const ReturnModal = ({ borrow, onClose, onSuccess }) => {
             <p>Member: {borrow.user_name}</p>
             <p>Due: {new Date(borrow.due_date).toLocaleDateString()}</p>
           </div>
-
           <label className="block text-sm font-medium text-[#4A3728] mb-2">Condition</label>
           <div className="flex gap-2 mb-6">
             {['good', 'damaged', 'lost'].map(c => (
               <button key={c} onClick={() => setCondition(c)}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium capitalize transition ${
-                  condition === c ? 'bg-[#C4895A] text-white' : 'bg-[#F3EDE3] text-[#4A3728] hover:bg-[#EAE0D0]'
-                }`}>
-                {c}
-              </button>
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium capitalize transition ${condition === c ? 'bg-[#C4895A] text-white' : 'bg-[#F3EDE3] text-[#4A3728] hover:bg-[#EAE0D0]'}`}>{c}</button>
             ))}
           </div>
-
           <div className="flex gap-3">
             <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-[#EAE0D0] rounded-lg hover:bg-gray-50 text-sm">Cancel</button>
-            <button onClick={handleReturn} disabled={returning} className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 text-sm font-medium">
-              {returning ? 'Returning...' : 'Confirm Return'}
-            </button>
+            <button onClick={handleReturn} disabled={returning} className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 text-sm font-medium">{returning ? 'Returning...' : 'Confirm Return'}</button>
           </div>
         </div>
       </div>
@@ -231,6 +218,7 @@ const BorrowingsPage = () => {
   const [history, setHistory] = useState([]);
   const [historyCount, setHistoryCount] = useState(0);
   const [selectedBookQueue, setSelectedBookQueue] = useState(null);
+  const [selectedQueueBook, setSelectedQueueBook] = useState(null);
   const [viewingQueue, setViewingQueue] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('borrowings');
@@ -270,8 +258,12 @@ const BorrowingsPage = () => {
 
   const viewBookQueue = async (bookId) => {
     setLoading(true);
-    try { setSelectedBookQueue(await borrowingsAPI.getBookReservationQueue(bookId) || []); setViewingQueue(true); }
-    catch { showToast('Failed to load queue', 'error'); }
+    try {
+      const queue = await borrowingsAPI.getBookReservationQueue(bookId) || [];
+      setSelectedBookQueue(queue);
+      setSelectedQueueBook(queueBooks.find(b => b.book_id === bookId));
+      setViewingQueue(true);
+    } catch { showToast('Failed to load queue', 'error'); }
     finally { setLoading(false); }
   };
 
@@ -283,7 +275,6 @@ const BorrowingsPage = () => {
 
   const handleApproveRenewal = async (id) => { try { await adminAPI.approveRenewal(id); showToast('Renewal approved', 'success'); fetchBorrowingsData(); } catch (e) { showToast(e.message, 'error'); } };
   const handleRejectRenewal = async (id) => { try { await adminAPI.rejectRenewal(id); showToast('Renewal rejected', 'success'); fetchBorrowingsData(); } catch (e) { showToast(e.message, 'error'); } };
-
 
   const renewalRequests = useMemo(() => borrowings.filter(b => b.renewal_requested && b.renewal_status === 'pending'), [borrowings]);
 
@@ -307,20 +298,12 @@ const BorrowingsPage = () => {
     { id: 'history', label: 'History', icon: FaHistory, count: historyCount },
   ];
 
-  const SearchInput = ({ value, onChange, placeholder }) => (
-    <div className="relative max-w-md w-full">
-      <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
-      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm" />
-      {value && <button onClick={() => onChange('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={12} /></button>}
-    </div>
-  );
-
   return (
     <div>
       <div className="flex justify-between items-center mb-8">
         <div className="flex gap-1 border-b border-[#EAE0D0] overflow-x-auto">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setViewingQueue(false); setPage(1); }}
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setViewingQueue(false); setSelectedQueueBook(null); setPage(1); }}
               className={`px-6 py-3 text-sm font-medium transition-all duration-200 whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id ? 'text-[#C4895A] border-b-2 border-[#C4895A]' : 'text-[#9A8478] hover:text-[#4A3728]'}`}>
               <tab.icon size={14} />{tab.label} ({tab.count})
             </button>
@@ -329,22 +312,58 @@ const BorrowingsPage = () => {
         <button onClick={() => setShowIssueModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium"><FaPlus size={14} />Issue Book</button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">
-        {activeTab === 'borrowings' && (
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-            <SearchInput value={searchBorrowings} onChange={setSearchBorrowings} placeholder="Search borrowings..." />
-            <div className="flex gap-2 flex-wrap">
-              {['all', 'borrowed', 'overdue'].map(f => (
-                <button key={f} onClick={() => { setFilter(f); setPage(1); }} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition ${filter === f ? 'bg-[#C4895A] text-white' : 'bg-[#F3EDE3] text-[#4A3728] hover:bg-[#EAE0D0]'}`}>{f}</button>
-              ))}
+      {/* Search Bar */}
+      {!(activeTab === 'queue' && viewingQueue) && (
+        <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-4 mb-6">
+          {activeTab === 'borrowings' && (
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+              <div className="relative max-w-md w-full">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+                <input type="text" placeholder="Search borrowings..." value={searchBorrowings} onChange={e => setSearchBorrowings(e.target.value)}
+                  className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm" />
+                {searchBorrowings && <button onClick={() => setSearchBorrowings('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={12} /></button>}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {['all', 'borrowed', 'overdue'].map(f => (
+                  <button key={f} onClick={() => { setFilter(f); setPage(1); }} className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition ${filter === f ? 'bg-[#C4895A] text-white' : 'bg-[#F3EDE3] text-[#4A3728] hover:bg-[#EAE0D0]'}`}>{f}</button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-        {activeTab === 'pickups' && <SearchInput value={searchPickups} onChange={setSearchPickups} placeholder="Search pickups..." />}
-        {activeTab === 'queue' && !viewingQueue && <SearchInput value={searchQueue} onChange={setSearchQueue} placeholder="Search waitlist..." />}
-        {activeTab === 'renewals' && <SearchInput value={searchRenewals} onChange={setSearchRenewals} placeholder="Search renewals..." />}
-        {activeTab === 'history' && <SearchInput value={searchHistory} onChange={setSearchHistory} placeholder="Search history..." />}
-      </div>
+          )}
+          {activeTab === 'pickups' && (
+            <div className="relative max-w-md w-full">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+              <input type="text" placeholder="Search pickups..." value={searchPickups} onChange={e => setSearchPickups(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm" />
+              {searchPickups && <button onClick={() => setSearchPickups('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={12} /></button>}
+            </div>
+          )}
+          {activeTab === 'queue' && (
+            <div className="relative max-w-md w-full">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+              <input type="text" placeholder="Search waitlist..." value={searchQueue} onChange={e => setSearchQueue(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm" />
+              {searchQueue && <button onClick={() => setSearchQueue('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={12} /></button>}
+            </div>
+          )}
+          {activeTab === 'renewals' && (
+            <div className="relative max-w-md w-full">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+              <input type="text" placeholder="Search renewals..." value={searchRenewals} onChange={e => setSearchRenewals(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm" />
+              {searchRenewals && <button onClick={() => setSearchRenewals('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={12} /></button>}
+            </div>
+          )}
+          {activeTab === 'history' && (
+            <div className="relative max-w-md w-full">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9A8478]" size={14} />
+              <input type="text" placeholder="Search history..." value={searchHistory} onChange={e => setSearchHistory(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm" />
+              {searchHistory && <button onClick={() => setSearchHistory('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={12} /></button>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* BORROWINGS */}
       {activeTab === 'borrowings' && (
@@ -400,8 +419,11 @@ const BorrowingsPage = () => {
         <div>
           {viewingQueue && selectedBookQueue ? (
             <div>
-              <button onClick={() => setViewingQueue(false)} className="flex items-center gap-2 text-[#C4895A] hover:underline mb-4 text-sm"><FaArrowLeft size={12} /> Back</button>
-              <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-6 mb-4"><h3 className="font-serif text-lg font-bold text-[#2C1F14]">{selectedBookQueue[0]?.title || 'Book'} — Waitlist</h3><p className="text-sm text-[#9A8478]">{selectedBookQueue.length} waiting</p></div>
+              <button onClick={() => { setViewingQueue(false); setSelectedQueueBook(null); }} className="flex items-center gap-2 text-[#C4895A] hover:underline mb-4 text-sm"><FaArrowLeft size={12} /> Back</button>
+              <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-6 mb-4">
+                <h3 className="font-serif text-lg font-bold text-[#2C1F14]">{selectedQueueBook?.title || 'Book'} — Waitlist</h3>
+                <p className="text-sm text-[#9A8478]">{selectedQueueBook?.author && `by ${selectedQueueBook.author} · `}{selectedBookQueue.length} waiting</p>
+              </div>
               <div className="space-y-2">{selectedBookQueue.map(u => (
                 <div key={u.reservation_id} className="bg-white rounded-lg border border-[#EAE0D0] p-4 flex items-center justify-between">
                   <div className="flex items-center gap-4"><span className="w-8 h-8 bg-[#C4895A] text-white rounded-full flex items-center justify-center text-sm font-bold">{u.queue_position}</span><div><div className="font-medium text-[#2C1F14]">{u.full_name}</div><div className="text-xs text-[#9A8478]">{u.email} · {u.phone || 'No phone'}</div><div className="text-xs text-[#9A8478] mt-1">Reserved: {new Date(u.reserved_at).toLocaleDateString()}</div></div></div>
