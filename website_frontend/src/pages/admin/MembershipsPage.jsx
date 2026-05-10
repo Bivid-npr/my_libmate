@@ -1,6 +1,6 @@
 // src/pages/admin/MembershipsPage.jsx
 import React, { useState, useEffect } from 'react';
-import { FaCheck, FaTimes, FaSearch, FaPlus, FaUser, FaTimesCircle, FaUpload } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaSearch, FaEye, FaReceipt, FaUser, FaEnvelope, FaPhone, FaMapMarker, FaCreditCard, FaPlus, FaUpload, FaTimesCircle } from 'react-icons/fa';
 import { adminAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
@@ -9,7 +9,10 @@ const MembershipsPage = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedMembership, setSelectedMembership] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [createData, setCreateData] = useState({ 
     full_name: '', email: '', phone: '', address: '', duration: '12', 
     profilePhoto: null, paymentReceipt: null, profilePhotoName: '', paymentReceiptName: '' 
@@ -28,21 +31,41 @@ const MembershipsPage = () => {
     finally { setLoading(false); }
   };
 
-  const handleApprove = async (id, duration) => {
-    try { await adminAPI.approveMembership(id, duration || 12); showToast('Membership approved!', 'success'); fetchMemberships(); }
-    catch (e) { showToast(e.message, 'error'); }
+  const handleViewDetails = (membership) => {
+    setSelectedMembership(membership);
+    setShowDetailModal(true);
   };
 
-  const handleReject = async (id) => {
-    if (!window.confirm('Reject this membership?')) return;
-    try { await adminAPI.rejectMembership(id); showToast('Membership rejected', 'success'); fetchMemberships(); }
-    catch (e) { showToast(e.message, 'error'); }
+  const handleApprove = async () => {
+    if (!selectedMembership) return;
+    const duration = prompt('Enter membership duration in months (default 12):', selectedMembership.duration_months || '12');
+    if (!duration) return;
+    setApproving(true);
+    try {
+      await adminAPI.approveMembership(selectedMembership.membership_id, parseInt(duration));
+      showToast('Membership approved successfully!', 'success');
+      setShowDetailModal(false);
+      setSelectedMembership(null);
+      fetchMemberships();
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { setApproving(false); }
+  };
+
+  const handleReject = async () => {
+    if (!selectedMembership) return;
+    if (!window.confirm('Reject this membership application?')) return;
+    try {
+      await adminAPI.rejectMembership(selectedMembership.membership_id);
+      showToast('Membership rejected', 'success');
+      setShowDetailModal(false);
+      setSelectedMembership(null);
+      fetchMemberships();
+    } catch (e) { showToast(e.message, 'error'); }
   };
 
   const handleCreate = async () => {
     if (!createData.full_name.trim()) { showToast('Full name is required', 'error'); return; }
-    if (!createData.profilePhoto) { showToast('Profile photo is required for membership card', 'error'); return; }
-    
+    if (!createData.profilePhoto) { showToast('Profile photo is required', 'error'); return; }
     setCreating(true);
     try {
       const formData = new FormData();
@@ -53,7 +76,6 @@ const MembershipsPage = () => {
       formData.append('duration_months', createData.duration);
       formData.append('profile_photo', createData.profilePhoto);
       if (createData.paymentReceipt) formData.append('payment_receipt', createData.paymentReceipt);
-
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch('/api/admin/memberships/create', {
         method: 'POST',
@@ -62,7 +84,6 @@ const MembershipsPage = () => {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed');
-      
       showToast(result.message || 'Membership created!', 'success');
       setShowCreateModal(false);
       setCreateData({ full_name: '', email: '', phone: '', address: '', duration: '12', profilePhoto: null, paymentReceipt: null, profilePhotoName: '', paymentReceiptName: '' });
@@ -72,6 +93,7 @@ const MembershipsPage = () => {
   };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
+  const formatDateTime = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A';
 
   const filtered = memberships.filter(m =>
     m.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -94,9 +116,9 @@ const MembershipsPage = () => {
             <input type="text" placeholder="Search by name or email..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A]" />
           </div>
-          <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium">
+          <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm font-medium whitespace-nowrap">
             <FaPlus size={14} />New Membership
-          </button>          
+          </button>
         </div>
       </div>
 
@@ -114,7 +136,6 @@ const MembershipsPage = () => {
                 <th className="text-left py-3 px-4 text-xs font-bold uppercase">Duration</th>
                 <th className="text-left py-3 px-4 text-xs font-bold uppercase">Start</th>
                 <th className="text-left py-3 px-4 text-xs font-bold uppercase">Expiry</th>
-                <th className="text-left py-3 px-4 text-xs font-bold uppercase">Card</th>
                 <th className="text-left py-3 px-4 text-xs font-bold uppercase">Status</th>
                 <th className="text-left py-3 px-4 text-xs font-bold uppercase">Actions</th>
               </tr>
@@ -126,16 +147,12 @@ const MembershipsPage = () => {
                   <td className="py-3 px-4 text-sm">{m.duration_months} mo</td>
                   <td className="py-3 px-4 text-sm">{formatDate(m.start_date)}</td>
                   <td className="py-3 px-4 text-sm">{formatDate(m.expiry_date)}</td>
-                  <td className="py-3 px-4 text-xs font-mono text-[#9A8478]">{m.card_number || '—'}</td>
                   <td className="py-3 px-4"><span className={`text-xs px-2 py-1 rounded-full ${
                     m.status === 'active' ? 'bg-green-100 text-green-700' : m.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}`}>{m.status}</span></td>
                   <td className="py-3 px-4">
-                    {m.status === 'pending' && (
-                      <div className="flex gap-1">
-                        <button onClick={() => handleApprove(m.membership_id, m.duration_months)} className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600"><FaCheck size={12} /></button>
-                        <button onClick={() => handleReject(m.membership_id)} className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600"><FaTimes size={12} /></button>
-                      </div>
-                    )}
+                    <button onClick={() => handleViewDetails(m)} className="p-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition" title="View Details">
+                      <FaEye size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -143,6 +160,92 @@ const MembershipsPage = () => {
           </table></div>
         )}
       </div>
+
+      {/* Detail Modal */}
+      {showDetailModal && selectedMembership && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="font-serif text-2xl font-bold text-[#2C1F14]">Membership Application Review</h2>
+                <button onClick={() => setShowDetailModal(false)} className="text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={20} /></button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="bg-[#F3EDE3] rounded-xl p-4">
+                    <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-3 flex items-center gap-2"><FaUser className="text-[#C4895A]" />Member Information</h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        {selectedMembership.profile_picture ? (
+                          <img src={`/uploads/photos/${selectedMembership.profile_picture}`} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-[#C4895A]" />
+                        ) : (
+                          <div className="w-16 h-16 bg-gradient-to-br from-[#2C1F14] to-[#4A3728] rounded-full flex items-center justify-center">
+                            <span className="text-white text-xl font-semibold">{selectedMembership.full_name?.charAt(0) || 'U'}</span>
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-semibold text-[#2C1F14] text-lg">{selectedMembership.full_name}</p>
+                          <p className="text-sm text-[#9A8478] flex items-center gap-1"><FaEnvelope size={12} />{selectedMembership.email}</p>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-[#EAE0D0]">
+                        <p className="text-sm text-[#4A3728] flex items-center gap-2"><FaPhone size={12} className="text-[#9A8478]" />{selectedMembership.phone || 'No phone provided'}</p>
+                        <p className="text-sm text-[#4A3728] flex items-center gap-2 mt-1"><FaMapMarker size={12} className="text-[#9A8478]" />{selectedMembership.address || 'No address provided'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-[#F3EDE3] rounded-xl p-4">
+                    <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-3 flex items-center gap-2"><FaCreditCard className="text-[#C4895A]" />Membership Details</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><p className="text-xs text-[#9A8478]">Duration</p><p className="font-semibold text-[#2C1F14]">{selectedMembership.duration_months} months</p></div>
+                      <div><p className="text-xs text-[#9A8478]">Requested</p><p className="text-sm text-[#4A3728]">{formatDateTime(selectedMembership.requested_at)}</p></div>
+                      <div><p className="text-xs text-[#9A8478]">Payment</p><span className={`inline-block text-xs px-2 py-1 rounded-full ${selectedMembership.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{selectedMembership.payment_status || 'pending'}</span></div>
+                      <div><p className="text-xs text-[#9A8478]">Card</p><p className="text-sm font-mono text-[#4A3728]">{selectedMembership.card_number || '—'}</p></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-[#F3EDE3] rounded-xl p-4">
+                    <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-3">Profile Photo</h3>
+                    <div className="flex justify-center">
+                      {selectedMembership.profile_picture ? (
+                        <img src={`/uploads/photos/${selectedMembership.profile_picture}`} alt="Profile" className="w-48 h-48 rounded-lg object-cover border-2 border-[#C4895A]" />
+                      ) : (
+                        <div className="w-48 h-48 bg-gray-200 rounded-lg flex items-center justify-center"><FaUser size={48} className="text-gray-400" /></div>
+                      )}
+                    </div>
+                    <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-xs text-yellow-700"><strong>Check:</strong> Verify this is a clear, front-facing photo suitable for a membership card.</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#F3EDE3] rounded-xl p-4">
+                    <h3 className="font-serif text-lg font-bold text-[#2C1F14] mb-3 flex items-center gap-2"><FaReceipt className="text-[#C4895A]" />Payment Receipt</h3>
+                    {selectedMembership.payment_receipt ? (
+                      <div className="text-center">
+                        <a href={`/uploads/receipts/${selectedMembership.payment_receipt}`} target="_blank" rel="noopener noreferrer">
+                          <img src={`/uploads/receipts/${selectedMembership.payment_receipt}`} alt="Receipt" className="max-h-64 rounded-lg border border-[#EAE0D0] mx-auto" />
+                        </a>
+                        <a href={`/uploads/receipts/${selectedMembership.payment_receipt}`} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-sm text-[#C4895A] hover:underline">Click to view full size</a>
+                      </div>
+                    ) : (
+                      <p className="text-center text-[#9A8478] py-8">No receipt uploaded</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-[#EAE0D0]">
+                <button onClick={() => setShowDetailModal(false)} className="px-6 py-2 border border-[#EAE0D0] rounded-lg hover:bg-gray-50 transition">Close</button>
+                <button onClick={handleReject} className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition flex items-center gap-2"><FaTimes size={14} />Reject</button>
+                <button onClick={handleApprove} disabled={approving} className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center gap-2 disabled:opacity-50"><FaCheck size={14} />{approving ? 'Approving...' : 'Approve'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Membership Modal */}
       {showCreateModal && (
@@ -180,7 +283,6 @@ const MembershipsPage = () => {
                     className="w-full px-3 py-2.5 border border-[#EAE0D0] rounded-lg" placeholder="Optional" />
                 </div>
 
-                {/* Photo & Receipt */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-[#4A3728] mb-1">Profile Photo *</label>
