@@ -165,8 +165,8 @@ const LoginPage = () => {
           <div className="mt-6 p-3 bg-[#EAE0D0]/30 rounded-lg border border-[#EAE0D0]">
             <p className="text-xs text-center text-[#9A8478]">
               <span className="font-semibold text-[#C4895A]">Demo Credentials:</span><br />
-              Email: emma.watson@email.com<br />
-              Password: password123
+              Email: admin@libmate.com<br />
+              Password: admin123
             </p>
           </div>
         </div>
