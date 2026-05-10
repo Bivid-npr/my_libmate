@@ -1,7 +1,7 @@
 // src/pages/admin/AdminDashboardPage.jsx
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FaExclamationTriangle, FaBook, FaUsers, FaExchangeAlt, FaFire, FaCreditCard, FaCheck, FaTimes, FaBookOpen } from 'react-icons/fa';
+import { FaExclamationTriangle, FaBook, FaUsers, FaExchangeAlt, FaFire, FaCreditCard, FaCheck, FaTimes, FaBookOpen, FaEye, FaUser, FaEnvelope, FaPhone } from 'react-icons/fa';
 import { adminAPI, borrowingsAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
@@ -11,6 +11,8 @@ const AdminDashboardPage = () => {
   const [pendingMemberships, setPendingMemberships] = useState([]);
   const [pendingPickups, setPendingPickups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedMembership, setSelectedMembership] = useState(null);
+  const [showMembershipModal, setShowMembershipModal] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -48,10 +50,16 @@ const AdminDashboardPage = () => {
     }
   };
 
+  const openMembershipDetail = (membership) => {
+    setSelectedMembership(membership);
+    setShowMembershipModal(true);
+  };
+
   const handleApproveMembership = async (membershipId) => {
     try {
       await adminAPI.approveMembership(membershipId);
       showToast('Membership approved successfully!', 'success');
+      setShowMembershipModal(false);
       fetchDashboardData();
     } catch (error) {
       showToast(error.message || 'Failed to approve membership', 'error');
@@ -63,6 +71,7 @@ const AdminDashboardPage = () => {
     try {
       await adminAPI.rejectMembership(membershipId);
       showToast('Membership rejected', 'success');
+      setShowMembershipModal(false);
       fetchDashboardData();
     } catch (error) {
       showToast(error.message || 'Failed to reject membership', 'error');
@@ -170,7 +179,7 @@ const AdminDashboardPage = () => {
               <p className="text-center py-6 text-[#9A8478]">No pending membership requests</p>
             ) : (
               pendingMemberships.slice(0, 5).map((item) => (
-                <div key={item.membership_id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-[#FAF7F2] rounded-lg">
+                <div key={item.membership_id} className="flex items-center justify-between p-3 bg-[#FAF7F2] rounded-lg hover:bg-[#F3EDE3] cursor-pointer transition" onClick={() => openMembershipDetail(item)}>
                   <div>
                     <span className="font-semibold text-[#2C1F14]">{item.full_name}</span>
                     <span className="text-xs text-[#9A8478] ml-2">{item.duration_months} months</span>
@@ -180,8 +189,7 @@ const AdminDashboardPage = () => {
                     <span className={`text-xs px-2 py-1 rounded-full ${item.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                       {item.payment_status === 'paid' ? 'Paid' : 'Pending'}
                     </span>
-                    <button onClick={() => handleApproveMembership(item.membership_id)} className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition" title="Approve"><FaCheck size={12} /></button>
-                    <button onClick={() => handleRejectMembership(item.membership_id)} className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition" title="Reject"><FaTimes size={12} /></button>
+                    <span className="text-xs text-[#C4895A]">Click to review →</span>
                   </div>
                 </div>
               ))
@@ -189,6 +197,57 @@ const AdminDashboardPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Membership Detail Modal */}
+      {showMembershipModal && selectedMembership && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="font-serif text-lg font-bold text-[#2C1F14]">Membership Request</h2>
+                <button onClick={() => setShowMembershipModal(false)} className="text-[#9A8478] hover:text-[#2C1F14]"><FaTimes size={18} /></button>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  {selectedMembership.profile_picture ? (
+                    <img src={`/uploads/photos/${selectedMembership.profile_picture}`} alt="" className="w-16 h-16 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-16 h-16 bg-[#C4895A] rounded-full flex items-center justify-center">
+                      <span className="text-white text-xl font-bold">{selectedMembership.full_name?.charAt(0)}</span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-bold text-[#2C1F14]">{selectedMembership.full_name}</p>
+                    <p className="text-sm text-[#9A8478] flex items-center gap-1"><FaEnvelope size={10} />{selectedMembership.email}</p>
+                    <p className="text-sm text-[#9A8478] flex items-center gap-1"><FaPhone size={10} />{selectedMembership.phone || 'No phone'}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 bg-[#F3EDE3] p-3 rounded-lg">
+                  <div><p className="text-xs text-[#9A8478]">Duration</p><p className="font-semibold">{selectedMembership.duration_months} months</p></div>
+                  <div><p className="text-xs text-[#9A8478]">Status</p><p className="font-semibold capitalize">{selectedMembership.status}</p></div>
+                  <div><p className="text-xs text-[#9A8478]">Payment</p><p className="font-semibold capitalize">{selectedMembership.payment_status}</p></div>
+                  <div><p className="text-xs text-[#9A8478]">Requested</p><p className="text-sm">{formatDate(selectedMembership.requested_at)}</p></div>
+                </div>
+                
+                {selectedMembership.payment_receipt && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Payment Receipt</p>
+                    <img src={`/uploads/receipts/${selectedMembership.payment_receipt}`} alt="Receipt" className="w-full rounded-lg border" />
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex gap-3 mt-6 pt-4 border-t border-[#EAE0D0]">
+                <button onClick={() => setShowMembershipModal(false)} className="flex-1 px-4 py-2 border border-[#EAE0D0] rounded-lg text-sm">Close</button>
+                <button onClick={() => handleRejectMembership(selectedMembership.membership_id)} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg text-sm">Reject</button>
+                <button onClick={() => handleApproveMembership(selectedMembership.membership_id)} className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg text-sm">Approve</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
