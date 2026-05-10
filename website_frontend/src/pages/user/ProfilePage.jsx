@@ -115,7 +115,7 @@ const ProfilePage = () => {
       const formData = new FormData();
       formData.append('profile_photo', file);
       
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/users/upload-photo`, {
         method: 'POST',
         headers: {
@@ -158,7 +158,7 @@ const ProfilePage = () => {
     setShowPhotoMenu(false);
     
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch(`${API_BASE_URL}/users/remove-photo`, {
         method: 'DELETE',
         headers: {
