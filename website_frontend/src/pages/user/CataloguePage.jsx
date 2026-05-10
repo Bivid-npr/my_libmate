@@ -625,7 +625,7 @@ const CataloguePage = () => {
           </aside>
 
           {/* Results Main */}
-          <div>
+          <div className="min-w-0 overflow-hidden">
             <div className="results-header flex justify-between items-center mb-5 flex-wrap gap-3">
               <div className="results-count text-sm text-[#9A8478]">
                 {sortedBooks.length} results
