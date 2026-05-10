@@ -1,14 +1,10 @@
--- ============================================================
 -- SMART LIBRARY MANAGEMENT SYSTEM - COMPLETE DEPLOYMENT SCRIPT
--- ============================================================
 
 SET GLOBAL event_scheduler = ON;
 SET GLOBAL time_zone = '+05:45';
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ============================================================
 -- TABLES
--- ============================================================
 
 CREATE TABLE admins (
     admin_id            INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
@@ -278,9 +274,7 @@ CREATE TABLE smoke_alerts (
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- ============================================================
 -- TRIGGERS
--- ============================================================
 
 DELIMITER $$
 
@@ -455,9 +449,7 @@ END$$
 
 DELIMITER ;
 
--- ============================================================
 -- EVENTS
--- ============================================================
 
 CREATE EVENT IF NOT EXISTS evt_mark_overdue
 ON SCHEDULE EVERY 1 DAY STARTS (CURRENT_DATE + INTERVAL 1 DAY)
@@ -484,9 +476,7 @@ CREATE EVENT IF NOT EXISTS evt_expire_memberships
 ON SCHEDULE EVERY 1 DAY STARTS (CURRENT_DATE + INTERVAL 1 DAY)
 DO UPDATE memberships SET status = 'expired' WHERE status = 'active' AND expiry_date < CURDATE();
 
--- ============================================================
 -- VIEWS
--- ============================================================
 
 CREATE VIEW vw_active_borrowings AS
 SELECT b.borrow_id, u.user_id, u.full_name AS member_name, u.email AS member_email,
@@ -583,7 +573,5 @@ LEFT JOIN (SELECT user_id, COUNT(*) AS active_borrows,
            FROM borrowings WHERE status NOT IN ('returned', 'lost') GROUP BY user_id) bc ON u.user_id = bc.user_id
 LEFT JOIN (SELECT user_id, COUNT(*) AS total_books_read FROM borrow_history GROUP BY user_id) hist ON u.user_id = hist.user_id;
 
--- ============================================================
 -- DONE
--- ============================================================
 SELECT 'Database deployment complete!' AS status;
