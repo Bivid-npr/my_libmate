@@ -90,69 +90,64 @@ const AnnouncementsPage = () => {
         </button>
       </div>
 
-      {/* Send Announcement Form */}
+      {/* New Announcement Modal */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border border-[#EAE0D0] p-6 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="font-serif text-lg font-bold text-[#2C1F14] flex items-center gap-2">
-              <FaBullhorn className="text-[#C4895A]" /> New Announcement
-            </h2>
-            <button onClick={() => setShowForm(false)} className="text-[#9A8478] hover:text-[#2C1F14]">
-              <FaTimes size={18} />
-            </button>
-          </div>
-          
-          <form onSubmit={handleSend}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-[#4A3728] mb-1">Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Library Holiday Closure"
-                className="w-full px-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
-                maxLength={255}
-              />
-            </div>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-[#4A3728] mb-1">Message</label>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Write your announcement message here..."
-                rows={4}
-                className="w-full px-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm resize-none"
-              />
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-              <div className="flex items-start gap-2">
-                <FaUsers className="text-blue-500 mt-0.5" size={14} />
-                <p className="text-xs text-blue-700">
-                  This announcement will be sent to all active library members. They will receive a notification immediately.
-                </p>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="font-serif text-lg font-bold text-[#2C1F14] flex items-center gap-2">
+                  <FaBullhorn className="text-[#C4895A]" /> New Announcement
+                </h2>
+                <button onClick={() => setShowForm(false)} className="text-[#9A8478] hover:text-[#2C1F14]">
+                  <FaTimes size={18} />
+                </button>
               </div>
-            </div>
+              
+              <form onSubmit={handleSend}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-[#4A3728] mb-1">Title</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g., Library Holiday Closure"
+                    className="w-full px-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm"
+                    maxLength={255}
+                  />
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-[#4A3728] mb-1">Message</label>
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Write your announcement message here..."
+                    rows={4}
+                    className="w-full px-4 py-2 border border-[#EAE0D0] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C4895A] text-sm resize-none"
+                  />
+                </div>
 
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 border border-[#EAE0D0] rounded-lg hover:bg-gray-50 transition text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={sending || !title.trim() || !message.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm disabled:opacity-50"
-              >
-                <FaPaperPlane size={12} />
-                {sending ? 'Sending...' : 'Send Announcement'}
-              </button>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                  <div className="flex items-start gap-2">
+                    <FaUsers className="text-blue-500 mt-0.5" size={14} />
+                    <p className="text-xs text-blue-700">
+                      This announcement will be sent to all active library members immediately.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setShowForm(false)}
+                    className="px-4 py-2 border border-[#EAE0D0] rounded-lg hover:bg-gray-50 transition text-sm">Cancel</button>
+                  <button type="submit" disabled={sending || !title.trim() || !message.trim()}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#C4895A] text-white rounded-lg hover:bg-[#D4A574] transition text-sm disabled:opacity-50">
+                    <FaPaperPlane size={12} />{sending ? 'Sending...' : 'Send Announcement'}
+                  </button>
+                </div>
+              </form>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
