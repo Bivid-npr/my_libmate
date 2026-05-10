@@ -388,8 +388,8 @@ def request_book():
     
     # Check if book already exists
     existing = db.session.execute(
-        text("SELECT book_id FROM books WHERE title LIKE :title AND is_archived = FALSE LIMIT 1"),
-        {'title': f'%{title}%'}
+        text("SELECT book_id FROM books WHERE LOWER(title) = LOWER(:title) AND is_archived = FALSE LIMIT 1"),
+        {'title': title.strip()}
     ).first()
     
     if existing:
