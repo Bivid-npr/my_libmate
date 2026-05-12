@@ -37,6 +37,18 @@ const NotificationsPage = () => {
     }
   }, []);
 
+  // Refetch when tab becomes visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications(); // or fetchAlerts() for SmokeAlerts
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchNotifications]); // or [fetchAlerts]
+
   const socketRef = useRef(null);
 
   useEffect(() => {

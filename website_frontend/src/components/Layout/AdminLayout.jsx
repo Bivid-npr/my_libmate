@@ -49,7 +49,8 @@ const AdminLayoutContent = () => {
 
     socket.on('new_notification', (data) => {
       setUnreadCount(prev => prev + 1);
-      showToast(data.message || data.title, 'info');
+      const toastType = data.type === 'smoke_alert' ? 'error' : 'info';
+      showToast(data.message || data.title, toastType);
     });
 
     const handleNotificationRead = () => fetchUnreadCount();

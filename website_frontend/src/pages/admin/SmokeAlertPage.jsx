@@ -1,6 +1,6 @@
 // src/pages/admin/SmokeAlertsPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { FaFire, FaExclamationTriangle, FaCheckCircle, FaClock, FaTrash, FaMicrochip, FaCheckDouble } from 'react-icons/fa';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { FaFire, FaExclamationTriangle, FaCheckCircle, FaMicrochip, FaCheckDouble } from 'react-icons/fa';
 import { io } from 'socket.io-client';
 import { adminAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -10,7 +10,6 @@ const SmokeAlertsPage = () => {
   const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState(null);
   const [resolvingAll, setResolvingAll] = useState(false);
-  const [lastAlertTime, setLastAlertTime] = useState(0);
   const { showToast } = useToast();
 
   const fetchAlerts = useCallback(async () => {
@@ -25,40 +24,44 @@ const SmokeAlertsPage = () => {
     }
   }, [showToast]);
 
+  // Add this after the socket useEffect in SmokeAlertsPage.jsx
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchAlerts();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchAlerts]);
+
+  const socketRef = useRef(null);
+
   useEffect(() => {
     fetchAlerts();
 
+    // Prevent duplicate connections from React StrictMode
+    if (socketRef.current) return;
+
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const socket = io({ query: { token } });
+    socketRef.current = io({ query: { token } });
 
-    socket.on('connect', () => {
-      console.log('WebSocket connected for smoke alerts');
+    socketRef.current.on('connect', () => {
+      fetchAlerts();
     });
 
-    socket.on('new_notification', (data) => {
-      if (data.type === 'smoke_alert') {
-        // Debounce: only add one alert per 10 seconds from the same event
-        const now = Date.now();
-        if (now - lastAlertTime > 10000) {
-          setLastAlertTime(now);
-          
-          const newAlert = {
-            alert_id: data.notification_id,
-            device_id: 'esp8266-01',
-            sensor_value: 0,
-            threshold_value: 170,
-            status: 'active',
-            detected_at: new Date().toISOString(),
-            resolved_at: null
-          };
-          setAlerts(prev => [newAlert, ...prev]);
-          showToast(data.message || 'Smoke alert received!', 'error');
-        }
-      }
+    socketRef.current.on('new_notification', (data) => {
+      fetchAlerts();
+      showToast(data.message || 'Smoke alert received!', 'error');
     });
 
-    return () => socket.disconnect();
-  }, [fetchAlerts, showToast, lastAlertTime]);
+    return () => {
+      socketRef.current?.removeAllListeners();
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
   const handleResolve = async (alertId) => {
     setResolving(alertId);
@@ -95,10 +98,15 @@ const SmokeAlertsPage = () => {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
+      if (!dateString) return 'N/A';
+      // The DB stores Nepal time but JS treats it as UTC
+      // Append +05:45 to tell JS it's Nepal time, not UTC
+      const fixedDate = dateString + '+05:45';
+      const date = new Date(fixedDate);
+      return date.toLocaleString('en-US', {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+          hour12: true
+      });
   };
 
   const activeAlerts = alerts.filter(a => a.status === 'active').length;

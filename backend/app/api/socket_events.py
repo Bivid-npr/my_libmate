@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 @socketio.on('connect')
 def handle_connect():
-    """Authenticate socket connection and join appropriate room."""
     token = request.args.get('token')
     
     if not token:
@@ -19,32 +18,35 @@ def handle_connect():
         return
     
     try:
-        decoded = decode_token(token)
+        # Use jwt directly to decode the raw claims
+        import jwt
+        decoded = jwt.decode(token, options={"verify_signature": False})
         
-        # flask-jwt-extended stores additional claims in 'sub' and nested dict
-        additional = decoded.get('additional_claims') or {}
-        user_type = additional.get('type', '')
+        user_type = decoded.get('type', '')
         user_sub = decoded.get('sub', '')
+        
+        print(f"[SOCKET] DECODED - type='{user_type}', sub='{user_sub}'")
         
         if user_type == 'admin':
             join_room('admin_room')
-            logger.debug("Admin joined admin_room (sub=%s)", user_sub)
+            print(f"[SOCKET] ✅ Admin joined admin_room")
         elif user_sub:
             join_room(f'user_{user_sub}')
-            logger.debug("User joined user_%s", user_sub)
+            print(f"[SOCKET] User joined user_{user_sub}")
         else:
             join_room('guest_room')
             
     except Exception as e:
-        logger.warning("Socket authentication failed: %s", e)
+        print(f"[SOCKET] Error: {e}")
         join_room('guest_room')
-
 
 def notify_admins_socket(data):
     """Send real-time notification to all connected admins."""
     socketio.emit('new_notification', data, room='admin_room')
+    print(f"[SOCKET] Emitted to admin_room: {data.get('title')}")
 
 
 def notify_user_socket(user_id, data):
     """Send real-time notification to a specific user."""
     socketio.emit('user_notification', data, room=f'user_{user_id}')
+    print(f"[SOCKET] Emitted to user_{user_id}: {data.get('title')}")
