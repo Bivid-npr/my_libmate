@@ -27,4 +27,4 @@ class TestTrending:
         
         assert response.status_code == 200
         data = json.loads(response.data)
-        assert 'unique_books' in data or 'total_borrows' in data
+        assert 'this_month' in data or 'total_trending_books' in data

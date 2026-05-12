@@ -75,7 +75,7 @@ class TestUsers:
     
     def test_get_recommendations(self, client, auth_headers):
         """Test getting book recommendations"""
-        response = client.get('/api/users/me/recommendations', headers=auth_headers)
+        response = client.get('/api/recommendations', headers=auth_headers)
         
         assert response.status_code == 200
         data = json.loads(response.data)
