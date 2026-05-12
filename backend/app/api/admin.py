@@ -1784,6 +1784,26 @@ def receive_smoke_alert():
     sensor_value = data.get('sensor_value', 0)
     
     if status == 'smoke_detected':
+        # DEDUPLICATE: Check if active alert exists in last 30 seconds
+        recent = db.session.execute(
+            text("""
+                SELECT alert_id FROM smoke_alerts 
+                WHERE device_id = :did AND status = 'active' 
+                AND detected_at > DATE_SUB(NOW(), INTERVAL 30 SECOND)
+                LIMIT 1
+            """),
+            {'did': device_id}
+        ).first()
+        
+        if recent:
+            # Update sensor value, don't create duplicate
+            db.session.execute(
+                text("UPDATE smoke_alerts SET sensor_value = :val WHERE alert_id = :aid"),
+                {'val': sensor_value, 'aid': recent[0]}
+            )
+            db.session.commit()
+            return jsonify({'message': 'Alert updated', 'alert_id': recent[0]}), 200
+        
         # Insert smoke alert record
         db.session.execute(
             text("""
@@ -1793,6 +1813,8 @@ def receive_smoke_alert():
             {'device_id': device_id, 'sensor_value': sensor_value, 'threshold': 170}
         )
         db.session.commit()
+        
+        alert_id = db.session.execute(text("SELECT LAST_INSERT_ID()")).first()[0]
         
         # Notify all admins
         title = "Smoke Detected!"
@@ -1820,7 +1842,7 @@ def receive_smoke_alert():
             'is_read': False
         })
         
-        return jsonify({'message': 'Alert received', 'alert_id': notification_id}), 201
+        return jsonify({'message': 'Alert received', 'alert_id': alert_id}), 201
     
     return jsonify({'message': 'Status received'}), 200
 

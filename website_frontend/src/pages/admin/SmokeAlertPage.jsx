@@ -53,7 +53,6 @@ const SmokeAlertsPage = () => {
 
     socketRef.current.on('new_notification', (data) => {
       fetchAlerts();
-      showToast(data.message || 'Smoke alert received!', 'error');
     });
 
     return () => {
