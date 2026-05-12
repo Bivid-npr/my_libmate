@@ -55,15 +55,32 @@ def create_app(config_class=Config):
     @socketio.on('connect')
     def handle_connect():
         token = request.args.get('token')
-        if token:
-            try:
-                decoded = decode_token(token)
-                claims = decoded.get('additional_claims', {}) or {}
-                room = 'admin_room' if claims.get('type') == 'admin' else f"user_{decoded.get('sub', '')}"
-                join_room(room)
-            except Exception:
+        
+        if not token:
+            join_room('guest_room')
+            return
+        
+        try:
+            # Decode JWT directly to get claims
+            from jwt import decode as jwt_decode
+            decoded = jwt_decode(token, options={"verify_signature": False})
+            
+            user_type = decoded.get('type', '')
+            user_sub = decoded.get('sub', '')
+            
+            print(f"[SOCKET] DECODED - type='{user_type}', sub='{user_sub}'")
+            
+            if user_type == 'admin':
+                join_room('admin_room')
+                print(f"[SOCKET] ✅ Admin joined admin_room")
+            elif user_sub:
+                join_room(f'user_{user_sub}')
+                print(f"[SOCKET] User joined user_{user_sub}")
+            else:
                 join_room('guest_room')
-        else:
+                
+        except Exception as e:
+            print(f"[SOCKET] Error: {e}")
             join_room('guest_room')
 
     @app.route('/uploads/<path:filename>')

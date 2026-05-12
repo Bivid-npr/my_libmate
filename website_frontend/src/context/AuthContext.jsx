@@ -28,37 +28,38 @@ export const AuthProvider = ({ children }) => {
   const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
-    const initAuth = async () => {
-      const token = getStoredValue('token');
-      const storedUser = getStoredValue('user');
-      const shouldRemember = localStorage.getItem('rememberMe') === 'true';
+    const validateStoredAuth = async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       
-      if (token && storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        setIsAuthenticated(true);
-        setRememberMe(shouldRemember);
-        setLoading(false);
-        
+      if (token) {
         try {
-          const response = await authAPI.getCurrentUser();
-          if (JSON.stringify(response.user) !== JSON.stringify(parsedUser)) {
-            setUser(response.user);
-            setStoredValue('user', JSON.stringify(response.user), shouldRemember);
-          }
-        } catch (error) {
-          if (error.message?.includes('Session expired') || error.message?.includes('401')) {
+          const response = await fetch('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (!response.ok) {
             clearStorages();
             setUser(null);
             setIsAuthenticated(false);
-            setRememberMe(false);
+            setLoading(false);  // ← ADD THIS
+            return;
           }
+          
+          const data = await response.json();
+          setUser(data.user);
+          setIsAuthenticated(true);
+        } catch (error) {
+          console.error('Auth validation failed:', error);
+          clearStorages();
+          setUser(null);
+          setIsAuthenticated(false);
         }
-      } else {
-        setLoading(false);
       }
+      
+      setLoading(false);  // ← ADD THIS (outside if, always runs)
     };
-    initAuth();
+    
+    validateStoredAuth();
   }, []);
 
   const login = useCallback(async (email, password, shouldRemember = false) => {

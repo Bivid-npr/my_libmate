@@ -1,6 +1,6 @@
 // src/pages/admin/SmokeAlertsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { FaFire, FaExclamationTriangle, FaCheckCircle, FaClock, FaTrash, FaMicrochip } from 'react-icons/fa';
+import { FaFire, FaExclamationTriangle, FaCheckCircle, FaClock, FaTrash, FaMicrochip, FaCheckDouble } from 'react-icons/fa';
 import { io } from 'socket.io-client';
 import { adminAPI } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -9,6 +9,8 @@ const SmokeAlertsPage = () => {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState(null);
+  const [resolvingAll, setResolvingAll] = useState(false);
+  const [lastAlertTime, setLastAlertTime] = useState(0);
   const { showToast } = useToast();
 
   const fetchAlerts = useCallback(async () => {
@@ -29,26 +31,66 @@ const SmokeAlertsPage = () => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     const socket = io({ query: { token } });
 
+    socket.on('connect', () => {
+      console.log('WebSocket connected for smoke alerts');
+    });
+
     socket.on('new_notification', (data) => {
       if (data.type === 'smoke_alert') {
-        fetchAlerts();
-        showToast(data.message || 'Smoke alert received!', 'error');
+        // Debounce: only add one alert per 10 seconds from the same event
+        const now = Date.now();
+        if (now - lastAlertTime > 10000) {
+          setLastAlertTime(now);
+          
+          const newAlert = {
+            alert_id: data.notification_id,
+            device_id: 'esp8266-01',
+            sensor_value: 0,
+            threshold_value: 170,
+            status: 'active',
+            detected_at: new Date().toISOString(),
+            resolved_at: null
+          };
+          setAlerts(prev => [newAlert, ...prev]);
+          showToast(data.message || 'Smoke alert received!', 'error');
+        }
       }
     });
 
     return () => socket.disconnect();
-  }, [fetchAlerts, showToast]);
+  }, [fetchAlerts, showToast, lastAlertTime]);
 
   const handleResolve = async (alertId) => {
     setResolving(alertId);
     try {
       await adminAPI.resolveSmokeAlert(alertId, 'Resolved by admin');
+      setAlerts(prev => prev.map(a => 
+        a.alert_id === alertId ? { ...a, status: 'resolved', resolved_at: new Date().toISOString() } : a
+      ));
       showToast('Alert resolved', 'success');
-      fetchAlerts();
     } catch (error) {
       showToast(error.message || 'Failed to resolve', 'error');
     } finally {
       setResolving(null);
+    }
+  };
+
+  const handleResolveAll = async () => {
+    if (!window.confirm(`Resolve all ${activeAlerts} active alerts?`)) return;
+    setResolvingAll(true);
+    try {
+      const activeAlertIds = alerts.filter(a => a.status === 'active').map(a => a.alert_id);
+      for (const id of activeAlertIds) {
+        await adminAPI.resolveSmokeAlert(id, 'Bulk resolved by admin');
+      }
+      setAlerts(prev => prev.map(a => 
+        a.status === 'active' ? { ...a, status: 'resolved', resolved_at: new Date().toISOString() } : a
+      ));
+      showToast(`Resolved ${activeAlertIds.length} alerts`, 'success');
+    } catch (error) {
+      showToast(error.message || 'Failed to resolve all', 'error');
+    } finally {
+      setResolvingAll(false);
     }
   };
 
@@ -74,6 +116,16 @@ const SmokeAlertsPage = () => {
             )}
           </p>
         </div>
+        {activeAlerts > 1 && (
+          <button
+            onClick={handleResolveAll}
+            disabled={resolvingAll}
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-medium disabled:opacity-50"
+          >
+            <FaCheckDouble size={14} />
+            {resolvingAll ? 'Resolving...' : 'Resolve All'}
+          </button>
+        )}
       </div>
 
       {activeAlerts > 0 && (

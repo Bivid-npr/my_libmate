@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { io } from 'socket.io-client';
 import { 
   FaBell, FaBars, FaTimes, FaBook, FaUser, 
   FaHeart, FaFire, FaStar, FaCrown, FaUserPlus,
@@ -22,25 +23,46 @@ const Navbar = () => {
     setPhotoTimestamp(Date.now());
   }, [user?.profile_picture]);
 
+    const fetchUnreadCount = async () => {
+    try {
+      const res = await apiRequest('/users/me/notifications');
+      setUnreadCount(res.filter(n => !n.is_read).length);
+    } catch (err) {
+      // Silently fail
+    }
+  };
+
   // Fetch unread notification count - only for regular users
   useEffect(() => {
     if (isAuthenticated && user?.role !== 'admin') {
+      // Initial fetch
       fetchUnreadCount();
+      
+      // Poll every 30 seconds as fallback
       const interval = setInterval(fetchUnreadCount, 30000);
-      return () => clearInterval(interval);
+      
+      // WebSocket: real-time updates
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const socket = io({ query: { token } });
+      
+      socket.on('user_notification', () => {
+        setUnreadCount(prev => prev + 1);
+      });
+      
+      // Listen for notification-read events
+      const handleNotificationRead = () => fetchUnreadCount();
+      window.addEventListener('notification-read', handleNotificationRead);
+      
+      return () => {
+        clearInterval(interval);
+        socket.disconnect();
+        window.removeEventListener('notification-read', handleNotificationRead);
+      };
     } else {
       setUnreadCount(0);
     }
   }, [isAuthenticated, user]);
 
-  const fetchUnreadCount = async () => {
-    try {
-      const res = await apiRequest('/users/me/notifications');
-      setUnreadCount(res.filter(n => !n.is_read).length);
-    } catch (err) {
-      // Silently fail - notifications are non-critical
-    }
-  };
 
   const handleLogout = () => {
     logout();

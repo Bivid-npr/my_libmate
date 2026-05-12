@@ -7,7 +7,6 @@ Handles both user and admin notifications with real-time WebSocket support.
 from sqlalchemy import text
 from datetime import datetime
 from ..extensions import db
-from ..api.socket_events import notify_admins_socket, notify_user_socket
 import logging
 
 logger = logging.getLogger(__name__)
@@ -86,6 +85,7 @@ class NotificationService:
     @staticmethod
     def _create_user_notification(user_id, notification_type, title, message):
         """Create and assign a notification for a specific user"""
+        from ..api.socket_events import notify_user_socket  # ← ADD THIS
         nid = NotificationService._insert_notification(notification_type, title, message)
         if nid:
             NotificationService._assign_to_user(nid, user_id)
@@ -103,6 +103,7 @@ class NotificationService:
     @staticmethod
     def _create_admin_notification(notification_type, title, message):
         """Create and assign a notification for all admins"""
+        from ..api.socket_events import notify_admins_socket  # ← ADD THIS
         nid = NotificationService._insert_notification(notification_type, title, message)
         if nid:
             NotificationService._assign_to_all_admins(nid)

@@ -1,5 +1,5 @@
 // src/pages/admin/NotificationsPage.jsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   FaBell, FaCheck, FaBook, FaUser, FaClock, FaExclamationTriangle, 
   FaCheckCircle, FaTimesCircle, FaCreditCard, FaRedo, FaFilter,
@@ -37,15 +37,18 @@ const NotificationsPage = () => {
     }
   }, []);
 
+  const socketRef = useRef(null);
+
   useEffect(() => {
     fetchNotifications();
 
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const socket = io({
-      query: { token }
-    });
+    // Prevent duplicate connections from React StrictMode
+    if (socketRef.current) return;
 
-    socket.on('new_notification', (data) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    socketRef.current = io({ query: { token } });
+
+    socketRef.current.on('new_notification', (data) => {
       setNotifications(prev => [{
         ...data,
         is_read: false,
@@ -54,8 +57,12 @@ const NotificationsPage = () => {
       window.dispatchEvent(new Event('notification-read'));
     });
 
-    return () => socket.disconnect();
-  }, [fetchNotifications]);
+    return () => {
+      socketRef.current?.removeAllListeners();
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
   const markAsRead = async (notificationId) => {
     try {

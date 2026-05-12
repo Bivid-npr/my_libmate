@@ -17,10 +17,18 @@ import logoIcon from '../../assets/logo_icon.svg';
 const AdminLayoutContent = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, loading } = useAuth();
+  const { user, isAdmin, logout, loading } = useAuth();
   const { showToast } = useToast();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!loading && !isAdmin) {
+      logout();
+      navigate('/login');
+    }
+  }, [loading, isAdmin]);
+
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -29,21 +37,21 @@ const AdminLayoutContent = () => {
     } catch (err) {}
   }, []);
 
-  // WebSocket for real-time notifications + initial fetch
+  // Initial fetch + refetch on navigation
   useEffect(() => {
     fetchUnreadCount();
+  }, [location.pathname, fetchUnreadCount]);
 
+  // WebSocket connection - runs ONCE
+  useEffect(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const socket = io({
-      query: { token }
-    });
+    const socket = io({ query: { token } });
 
     socket.on('new_notification', (data) => {
       setUnreadCount(prev => prev + 1);
       showToast(data.message || data.title, 'info');
     });
 
-    // Listen for notification-read events from NotificationsPage
     const handleNotificationRead = () => fetchUnreadCount();
     window.addEventListener('notification-read', handleNotificationRead);
 
@@ -51,12 +59,7 @@ const AdminLayoutContent = () => {
       socket.disconnect();
       window.removeEventListener('notification-read', handleNotificationRead);
     };
-  }, [fetchUnreadCount, showToast]);
-
-  // Refetch count when navigating between pages
-  useEffect(() => {
-    fetchUnreadCount();
-  }, [location.pathname, fetchUnreadCount]);
+  }, []); // ← EMPTY dependency array - connects once
 
   if (loading) return <LoadingScreen />;
 
