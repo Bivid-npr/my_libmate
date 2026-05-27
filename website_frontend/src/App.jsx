@@ -22,7 +22,7 @@ import MyBooksPage from './pages/user/MyBooksPage';
 import WishlistPage from './pages/user/WishlistPage';
 import NotificationsPage from './pages/user/NotificationsPage';
 import ProfilePage from './pages/user/ProfilePage';
-import AiChat from "./pages/user/AiChat";
+import AIChat from "./pages/user/AIChat";
 
 
 // Auth Pages
