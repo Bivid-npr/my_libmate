@@ -9,6 +9,7 @@ import MemberLayout from './components/Layout/MemberLayout';
 import AuthLayout from './components/Layout/AuthLayout';
 import AdminLayout from './components/Layout/AdminLayout';
 
+
 // Public Pages
 import HomePage from './pages/user/HomePage';
 import CataloguePage from './pages/user/CataloguePage';
@@ -21,6 +22,8 @@ import MyBooksPage from './pages/user/MyBooksPage';
 import WishlistPage from './pages/user/WishlistPage';
 import NotificationsPage from './pages/user/NotificationsPage';
 import ProfilePage from './pages/user/ProfilePage';
+import AiChat from "./pages/user/AiChat";
+
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
@@ -79,6 +82,25 @@ const ProtectedMemberRoute = ({ children }) => {
   return children;
 };
 
+// Allow any logged-in user (member or admin)
+const AuthenticatedOnly = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-[#C4895A] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
 // Protected Route Component for Admin Routes
 const ProtectedAdminRoute = ({ children }) => {
   const { isAuthenticated, user, loading } = useAuth();
@@ -117,6 +139,14 @@ function AppContent() {
         <Route path="trending" element={<TrendingPage />} />
         <Route path="new-arrivals" element={<NewArrivalsPage />} />
         <Route path="book/:id" element={<BookDetailPage />} />
+        <Route 
+    path="ai-search" 
+    element={
+      <AuthenticatedOnly>
+        <AISearchPage />
+      </AuthenticatedOnly>
+    } 
+  />
       </Route>
 
       {/* Member routes — ONLY for non-admin authenticated users */}

@@ -42,13 +42,15 @@ def create_app(config_class=Config):
     from .api.new_arrivals import new_arrivals_bp
     from .api.recommendations import recommendations_bp
     from .api.admin import admin_bp
+    from .api.ai_chat import ai_chat_bp
     from .api.membership import membership_bp
+    
 
     for bp, prefix in [
         (auth_bp, '/api/auth'), (books_bp, '/api/books'), (users_bp, '/api/users'),
         (borrowings_bp, '/api/borrowings'), (trending_bp, '/api/trending'),
         (new_arrivals_bp, '/api/new-arrivals'), (recommendations_bp, '/api/recommendations'),
-        (admin_bp, '/api/admin'), (membership_bp, '/api/membership'),
+        (admin_bp, '/api/admin'), (membership_bp, '/api/membership'),(ai_chat_bp, '/api/ai-chat'),  
     ]:
         app.register_blueprint(bp, url_prefix=prefix)
 
@@ -158,12 +160,12 @@ def create_app(config_class=Config):
     from .services.notification_service import NotificationService
     from .services.email_service import send_due_date_reminder_emails, send_overdue_notice_emails
 
-    schedule.every().day.at("03:00").do(RecommendationService.update_trending_books)
-    schedule.every().day.at("09:00").do(NotificationService.send_due_date_reminders)
-    schedule.every().day.at("09:00").do(NotificationService.send_overdue_notices)
-    schedule.every().day.at("09:00").do(NotificationService.send_membership_expiry_warnings)
-    schedule.every().day.at("09:00").do(send_due_date_reminder_emails)
-    schedule.every().day.at("09:00").do(send_overdue_notice_emails)
+    schedule.every().day.at("03:00").do(run_with_context(RecommendationService.update_trending_books))
+    schedule.every().day.at("09:00").do(run_with_context(NotificationService.send_due_date_reminders))
+    schedule.every().day.at("09:00").do(run_with_context(NotificationService.send_overdue_notices))
+    schedule.every().day.at("09:00").do(run_with_context(NotificationService.send_membership_expiry_warnings))
+    schedule.every().day.at("09:00").do(run_with_context(send_due_date_reminder_emails))
+    schedule.every().day.at("09:00").do(run_with_context(send_overdue_notice_emails))
 
     def run_scheduler():
         while True:

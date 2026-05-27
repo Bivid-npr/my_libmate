@@ -44,3 +44,10 @@ class Config:
     FINE_RATE_PER_DAY = float(os.getenv('FINE_RATE_PER_DAY', 5.00))
     MAX_BORROW_LIMIT = int(os.getenv('MAX_BORROW_LIMIT', 5))
     RESERVATION_HOURS = int(os.getenv('RESERVATION_HOURS', 48))
+
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+    OPENROUTER_BASE_URL = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+    OPENROUTER_MODEL = os.getenv('OPENROUTER_MODEL', 'meta-llama/llama-3-8b-instruct:free')  # free model
+    OPENROUTER_SITE_URL = os.getenv('OPENROUTER_SITE_URL', 'http://localhost:5173')
+    OPENROUTER_SITE_NAME = os.getenv('OPENROUTER_SITE_NAME', 'LibMate')

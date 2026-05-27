@@ -1,6 +1,6 @@
 // src/services/api.js
 
-export const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000/api' : '/api';
+export const API_BASE_URL = '/api';
 
 const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
 
