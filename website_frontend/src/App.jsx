@@ -24,7 +24,7 @@ import NotificationsPage from './pages/user/NotificationsPage';
 import ProfilePage from './pages/user/ProfilePage';
 import AIChat from "./pages/user/AIChat";
 
-
+  
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -138,15 +138,8 @@ function AppContent() {
         <Route path="catalogue" element={<CataloguePage />} />
         <Route path="trending" element={<TrendingPage />} />
         <Route path="new-arrivals" element={<NewArrivalsPage />} />
-        <Route path="book/:id" element={<BookDetailPage />} />
-        <Route 
-    path="ai-search" 
-    element={
-      <AuthenticatedOnly>
-        <AISearchPage />
-      </AuthenticatedOnly>
-    } 
-  />
+        <Route path="book/:id" element={<BookDetailPage />} /> 
+
       </Route>
 
       {/* Member routes — ONLY for non-admin authenticated users */}
@@ -165,6 +158,7 @@ function AppContent() {
         <Route path="profile" element={
           <ProtectedMemberRoute><ProfilePage /></ProtectedMemberRoute>
         } />
+        <Route path="ai-chat" element={<ProtectedMemberRoute><AIChat /></ProtectedMemberRoute>} />
       </Route>
 
       {/* Auth routes */}

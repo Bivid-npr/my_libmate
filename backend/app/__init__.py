@@ -13,6 +13,7 @@ import time
 
 from .extensions import db
 from .config import Config
+from .api.ai_chat import ai_chat_bp   
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
@@ -160,12 +161,12 @@ def create_app(config_class=Config):
     from .services.notification_service import NotificationService
     from .services.email_service import send_due_date_reminder_emails, send_overdue_notice_emails
 
-    schedule.every().day.at("03:00").do(run_with_context(RecommendationService.update_trending_books))
-    schedule.every().day.at("09:00").do(run_with_context(NotificationService.send_due_date_reminders))
-    schedule.every().day.at("09:00").do(run_with_context(NotificationService.send_overdue_notices))
-    schedule.every().day.at("09:00").do(run_with_context(NotificationService.send_membership_expiry_warnings))
-    schedule.every().day.at("09:00").do(run_with_context(send_due_date_reminder_emails))
-    schedule.every().day.at("09:00").do(run_with_context(send_overdue_notice_emails))
+    schedule.every().day.at("03:00").do(RecommendationService.update_trending_books)
+    schedule.every().day.at("09:00").do(NotificationService.send_due_date_reminders)
+    schedule.every().day.at("09:00").do(NotificationService.send_overdue_notices)
+    schedule.every().day.at("09:00").do(NotificationService.send_membership_expiry_warnings)
+    schedule.every().day.at("09:00").do(send_due_date_reminder_emails)
+    schedule.every().day.at("09:00").do(send_overdue_notice_emails)
 
     def run_scheduler():
         while True:

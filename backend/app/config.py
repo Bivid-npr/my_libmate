@@ -1,8 +1,13 @@
 # app/config.py - Update CORS_ORIGINS
 import os
 from datetime import timedelta
+from dotenv import load_dotenv   
+
+load_dotenv()
 
 class Config:
+
+    GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
     # Database Configuration
     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
     DB_PORT = os.getenv('DB_PORT', '3306')

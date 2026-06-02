@@ -90,7 +90,7 @@ const Navbar = () => {
   ];
 
   const memberLinks = [
-    { icon: FaRobot, label: 'AI Search', href: '/ai-search' },
+    { icon: FaBook, label: 'AI Search', href: '/ai-chat' },
     { icon: FaBook, label: 'My Books', href: '/my-books' },
     { icon: FaHeart, label: 'Wishlist', href: '/wishlist' },
     { icon: FaCrown, label: 'Membership', href: '/profile' },
